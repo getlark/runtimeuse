@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# React Router
+.react-router/
+.source
+
+# Vite
+.vite/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE / editor
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs and temp
+*.log
+npm-debug.log*
+.npm
+.cache/
+
+# Optional: lockfile (uncomment if you want to ignore)
+# package-lock.json
+# pnpm-lock.yaml
+# yarn.lock

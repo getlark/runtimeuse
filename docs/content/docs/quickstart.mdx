@@ -1,0 +1,62 @@
+---
+title: Quickstart
+description: Get the runtime running in a sandbox and connect to it from Python.
+---
+
+## Step 1: Start the Runtime in a Sandbox
+
+Inside any sandbox that can run `npx` and expose a port:
+
+```bash
+npx -y runtimeuse
+```
+
+This starts a WebSocket server on port 8080 using the OpenAI agent handler by default. To use Claude instead:
+
+```bash
+npx -y runtimeuse --agent claude
+```
+
+## Step 2: Connect from Python
+
+Install the Python client:
+
+```bash
+pip install runtimeuse
+```
+
+Connect to the WebSocket server and invoke the agent:
+
+```python
+from runtimeuse import RuntimeUseClient, RuntimeUseInvoker, InvocationMessage, ResultMessageInterface
+
+# Connect to the sandbox's WebSocket server
+sandbox = Sandbox.create()
+sandbox.run("npx -y runtimeuse")
+ws_url = sandbox.get_url(8080)
+
+client = RuntimeUseClient(ws_url=ws_url)
+invoker = RuntimeUseInvoker(client)
+
+# Build an invocation
+invocation = InvocationMessage(
+    message_type="invocation_message",
+    source_id="my-source",
+    system_prompt="You are a helpful assistant.",
+    user_prompt="Run the tests.",
+    output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}',
+    secrets_to_redact=[],
+    agent_env={},
+)
+
+# Invoke and handle the result
+async def on_result(result: ResultMessageInterface):
+    print(f"Result: {result.structured_output}")
+
+await invoker.invoke(
+    invocation=invocation,
+    on_result_message=on_result,
+    result_message_cls=ResultMessageInterface,
+)
+```
+

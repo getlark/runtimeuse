@@ -1,0 +1,33 @@
+---
+title: Introduction
+description: Run AI agents in sandboxes and communicate over WebSocket.
+---
+
+## What is RuntimeUse?
+
+RuntimeUse lets you run an AI agent inside any sandbox and communicate with it over WebSocket — handling artifact uploads, pre-commands, file downloads, cancellation, and structured results.
+
+It is made up of two parts:
+
+1. **NPM Runtime executable** — Run it in any sandbox with `npx runtimeuse`. It sets up your agent of choice (Claude, OpenAI, etc) and starts a WebSocket server to interact with it.
+2. **Client libraries** — Simple abstractions for interacting with the sandbox WebSocket server from your API server, worker nodes, etc.
+
+## Built-in Agent Handlers
+
+The runtime ships with two built-in handlers:
+
+- **`openai`** (default) — uses `@openai/agents` SDK
+- **`claude`** — uses `@anthropic-ai/claude-agent-sdk` with Claude Code tools and `bypassPermissions` mode
+
+Switch between them with `--agent openai` or `--agent claude`.
+
+## Key Features
+
+- **Sandbox-agnostic** — works with any provider that can run `npx` and expose a port
+- **Artifact management** — files written to the artifacts directory are automatically detected and uploaded through a presigned URL handshake with the client
+- **Secret redaction** — secret values are recursively replaced before they leave the sandbox
+- **Pre-commands** — run shell commands before agent invocation with automatic secret redaction and abort support
+
+<Cards>
+  <Card title="Quickstart" href="/docs/quickstart" />
+</Cards>
