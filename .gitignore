@@ -28,7 +28,7 @@ Thumbs.db
 npm-debug.log*
 .npm
 .cache/
-
+build/
 # Optional: lockfile (uncomment if you want to ignore)
 # package-lock.json
 # pnpm-lock.yaml
