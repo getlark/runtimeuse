@@ -1,0 +1,40 @@
+{
+  "name": "runtimeuse",
+  "version": "0.3.0",
+  "description": "AI agent runtime with WebSocket protocol, artifact handling, and secret management",
+  "license": "BSL-1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "runtimeuse": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "dev-publish": "bash scripts/dev-publish.sh"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.73",
+    "@openai/agents": "^0.6.0",
+    "archiver": "^7.0.1",
+    "chokidar": "^5.0.0",
+    "ignore": "^7.0.5",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/archiver": "^7.0.0",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.18"
+  }
+}
