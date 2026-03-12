@@ -23,7 +23,6 @@ async def main():
         message_type="invocation_message",
         source_id="my-source",
         preferred_model="gpt-5.4",
-        # artifacts_dir=os.path.join(os.getcwd(), "artifacts"),
         pre_agent_invocation_commands=[
             CommandInterface(
                 command="echo 'Hello, world!'",

@@ -12,7 +12,7 @@ Run AI agents inside sandboxes over WebSocket. Two packages:
 ### 1. Start the runtime (inside a sandbox)
 
 ```bash
-npx -y runtimeuse
+npx -y runtimeuse@latest
 ```
 
 This starts a WebSocket server on port 8080 using the OpenAI agent handler by default. Use `--agent claude` for Claude.
