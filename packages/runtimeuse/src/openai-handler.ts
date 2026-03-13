@@ -19,8 +19,6 @@ export const openaiHandler: AgentHandler = {
     invocation: AgentInvocation,
     sender: MessageSender,
   ): Promise<AgentResult> {
-    Object.assign(process.env, invocation.env);
-
     const strictSchema = ensureStrictSchema(invocation.outputFormat.schema);
     const outputType = zod.fromJSONSchema(strictSchema) as AgentOutputType;
 

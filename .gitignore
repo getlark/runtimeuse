@@ -21,6 +21,7 @@ node_modules/
 Thumbs.db
 
 # IDE / editor
+.vscode/
 .idea/
 *.swp
 *.swo

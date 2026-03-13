@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any, Awaitable, Callable, Literal
 
 from pydantic import BaseModel
 from pydantic.fields import Field
@@ -28,17 +28,17 @@ class CommandInterface(BaseModel):
 
 class InvocationMessage(BaseModel):
     message_type: Literal["invocation_message"]
-    source_id: str
+    source_id: str | None = None
     system_prompt: str
     user_prompt: str
     output_format_json_schema_str: str
-    secrets_to_redact: list[str]
-    agent_env: dict[str, str]
+    secrets_to_redact: list[str] = Field(default_factory=list)
     artifacts_dir: str | None = None
     pre_agent_invocation_commands: list[CommandInterface] | None = None
     post_agent_invocation_commands: list[CommandInterface] | None = None
-    preferred_model: str
-    runtime_environment_downloadables: (
+    model: str
+
+    pre_agent_downloadables: (
         list[RuntimeEnvironmentDownloadableInterface] | None
     ) = None
 
@@ -76,3 +76,16 @@ class ErrorMessageInterface(AgentRuntimeMessageInterface):
 
 class CancelMessage(BaseModel):
     message_type: Literal["cancel_message"]
+
+
+class ArtifactUploadResult(BaseModel):
+    presigned_url: str
+    content_type: str
+
+
+OnAssistantMessageCallback = Callable[[AssistantMessageInterface], Awaitable[None]]
+OnArtifactUploadRequestCallback = Callable[
+    [ArtifactUploadRequestMessageInterface], Awaitable[ArtifactUploadResult]
+]
+OnErrorMessageCallback = Callable[[ErrorMessageInterface], Awaitable[None]]
+IsCancelledCallback = Callable[[], Awaitable[bool]]

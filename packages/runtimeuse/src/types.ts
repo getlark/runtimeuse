@@ -11,17 +11,16 @@ interface RuntimeEnvironmentDownloadable {
 
 interface InvocationMessage {
   message_type: "invocation_message";
-  source_id: string;
+  source_id?: string;
   system_prompt: string;
   user_prompt: string;
   secrets_to_redact: string[];
-  agent_env?: Record<string, string>;
   output_format_json_schema_str: string;
-  preferred_model: string;
+  model: string;
   artifacts_dir?: string;
   pre_agent_invocation_commands?: Command[];
   post_agent_invocation_commands?: Command[];
-  runtime_environment_downloadables?: RuntimeEnvironmentDownloadable[];
+  pre_agent_downloadables?: RuntimeEnvironmentDownloadable[];
 }
 
 interface CancelMessage {

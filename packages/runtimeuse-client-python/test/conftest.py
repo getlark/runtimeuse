@@ -43,11 +43,10 @@ def _make_invocation(**overrides: Any) -> InvocationMessage:
         message_type="invocation_message",
         source_id="test-001",
         system_prompt="You are a good assistant.",
-        preferred_model="gpt-5.4`",
         user_prompt="Do something.",
         output_format_json_schema_str='{"type":"object"}',
         secrets_to_redact=[],
-        agent_env={},
+        model="gpt-4o",
     )
     defaults.update(overrides)
     return InvocationMessage.model_validate(defaults)

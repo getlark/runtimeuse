@@ -8,6 +8,7 @@ from src.runtimeuse_client import (
     ResultMessageInterface,
     AssistantMessageInterface,
     ArtifactUploadRequestMessageInterface,
+    ArtifactUploadResult,
     ErrorMessageInterface,
     CancelledException,
 )
@@ -179,9 +180,12 @@ class TestArtifactUpload:
 
         async def on_artifact(
             req: ArtifactUploadRequestMessageInterface,
-        ) -> tuple[str, str]:
+        ) -> ArtifactUploadResult:
             assert req.filename == "screenshot.png"
-            return "https://s3.example.com/presigned", "image/png"
+            return ArtifactUploadResult(
+                presigned_url="https://s3.example.com/presigned",
+                content_type="image/png",
+            )
 
         await client.invoke(
             invocation=invocation,

@@ -14,6 +14,10 @@ from .types import (
     AssistantMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResponseMessageInterface,
+    OnAssistantMessageCallback,
+    OnArtifactUploadRequestCallback,
+    OnErrorMessageCallback,
+    IsCancelledCallback,
 )
 from .exceptions import CancelledException
 
@@ -50,22 +54,13 @@ class RuntimeUseClient:
     async def invoke(
         self,
         invocation: InvocationMessage,
+        # this should be response instead?
         on_result_message: Callable[[T], Awaitable[None]],
         result_message_cls: Type[T],
-        on_assistant_message: (
-            Callable[[AssistantMessageInterface], Awaitable[None]] | None
-        ) = None,
-        on_artifact_upload_request: (
-            Callable[
-                [ArtifactUploadRequestMessageInterface],
-                Awaitable[tuple[str, str]],
-            ]
-            | None
-        ) = None,
-        on_error_message: (
-            Callable[[ErrorMessageInterface], Awaitable[None]] | None
-        ) = None,
-        is_cancelled: Callable[[], Awaitable[bool]] | None = None,
+        on_assistant_message: OnAssistantMessageCallback | None = None,
+        on_artifact_upload_request: OnArtifactUploadRequestCallback | None = None,
+        on_error_message: OnErrorMessageCallback | None = None,
+        is_cancelled: IsCancelledCallback | None = None,
         timeout: float | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
@@ -79,8 +74,8 @@ class RuntimeUseClient:
             on_assistant_message: Optional async callback invoked when an assistant_message
                 is received.
             on_artifact_upload_request: Optional async callback invoked when an
-                artifact_upload_request_message is received. Should return a
-                (presigned_url, content_type) tuple; the client will send the
+                artifact_upload_request_message is received. Should return an
+                ArtifactUploadResult; the client will send the
                 artifact_upload_response_message back to the agent runtime automatically.
             on_error_message: Optional async callback invoked when an error_message is
                 received.
@@ -164,15 +159,15 @@ class RuntimeUseClient:
                                 message
                             )
                         )
-                        presigned_url, content_type = await on_artifact_upload_request(
+                        upload_result = await on_artifact_upload_request(
                             artifact_upload_request_message_interface
                         )
                         artifact_upload_response_message_interface = ArtifactUploadResponseMessageInterface(
                             message_type="artifact_upload_response_message",
                             filename=artifact_upload_request_message_interface.filename,
                             filepath=artifact_upload_request_message_interface.filepath,
-                            presigned_url=presigned_url,
-                            content_type=content_type,
+                            presigned_url=upload_result.presigned_url,
+                            content_type=upload_result.content_type,
                         )
                         await send_queue.put(
                             artifact_upload_response_message_interface.model_dump(

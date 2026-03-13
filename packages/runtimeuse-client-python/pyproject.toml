@@ -20,5 +20,12 @@ Homepage = "https://github.com/getlark/runtimeuse"
 Repository = "https://github.com/getlark/runtimeuse"
 Issues = "https://github.com/getlark/runtimeuse/issues"
 
+[project.optional-dependencies]
+dev = [
+    "daytona",
+    "e2b",
+    "e2b-code-interpreter",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/runtimeuse_client"]

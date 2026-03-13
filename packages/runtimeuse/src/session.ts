@@ -45,6 +45,8 @@ export class WebSocketSession {
             error: String(error),
             metadata: {},
           });
+
+          // todo: maybe close ws on error since nothing will happen after?
         }
       });
 
@@ -74,7 +76,7 @@ export class WebSocketSession {
     ) {
       throw new Error(
         "Received non-invocation message before invocation message! Received: " +
-          JSON.stringify(message),
+        JSON.stringify(message),
       );
     }
 
@@ -114,9 +116,10 @@ export class WebSocketSession {
   }
 
   private async executeInvocation(message: InvocationMessage): Promise<void> {
-    this.logger = createLogger(message.source_id);
+    const sourceId = message.source_id ?? crypto.randomUUID();
+    this.logger = createLogger(sourceId);
     this.config.uploadTracker.setLogger(this.logger);
-    this.logger.log(`Received invocation: model=${message.preferred_model}`);
+    this.logger.log(`Received invocation: model=${message.model}`);
 
     this.initArtifactManager(message.artifacts_dir);
 

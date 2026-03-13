@@ -6,7 +6,6 @@ export interface AgentInvocation {
   outputFormat: { type: "json_schema"; schema: Record<string, unknown> };
   model: string;
   secrets: string[];
-  env: Record<string, string>;
   signal: AbortSignal;
   logger: Logger;
 }

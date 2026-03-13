@@ -40,8 +40,6 @@ export const claudeHandler: AgentHandler = {
           model: invocation.model,
           outputFormat: invocation.outputFormat,
           abortController,
-          cwd: process.cwd(),
-          env: { ...process.env, ...invocation.env },
           tools: { type: "preset", preset: "claude_code" },
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
