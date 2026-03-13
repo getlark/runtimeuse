@@ -1,0 +1,29 @@
+name: Test runtimeuse-client-python
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/runtimeuse-client-python/**"
+  pull_request:
+    paths:
+      - "packages/runtimeuse-client-python/**"
+
+defaults:
+  run:
+    working-directory: packages/runtimeuse-client-python
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]" 2>/dev/null || pip install -e .
+      - run: pip install pytest pytest-asyncio
+      - run: pytest test/

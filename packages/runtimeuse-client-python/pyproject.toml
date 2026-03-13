@@ -7,12 +7,18 @@ name = "runtimeuse-client"
 version = "0.3.0"
 description = "Client library for AI agent runtime communication over WebSocket"
 readme = "README.md"
-license = "BSL-1.0"
+license = {"text" = "FSL"}
 requires-python = ">=3.10"
+keywords = ["ai", "agent", "runtime", "websocket", "sandbox"]
 dependencies = [
     "pydantic>=2.0",
     "websockets>=12.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/getlark/runtimeuse"
+Repository = "https://github.com/getlark/runtimeuse"
+Issues = "https://github.com/getlark/runtimeuse/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/runtimeuse_client"]

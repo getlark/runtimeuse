@@ -1,18 +1,12 @@
 import { WebSocket } from "ws";
 
-import type { AgentHandler, MessageSender } from "./agent-handler.js";
+import type { AgentHandler } from "./agent-handler.js";
 import { ArtifactManager } from "./artifact-manager.js";
 import type { UploadTracker } from "./upload-tracker.js";
-import type {
-  InvocationMessage,
-  IncomingMessage,
-  OutgoingMessage,
-  ResultMessage,
-} from "./types.js";
+import type { InvocationMessage, IncomingMessage, OutgoingMessage } from "./types.js";
 import { sleep } from "./utils.js";
 import { createLogger, defaultLogger, type Logger } from "./logger.js";
-import CommandHandler from "./command-handler.js";
-import DownloadHandler from "./download-handler.js";
+import { InvocationRunner } from "./invocation-runner.js";
 
 export interface SessionConfig {
   handler: AgentHandler;
@@ -30,13 +24,11 @@ export class WebSocketSession {
   private artifactManager: ArtifactManager | null = null;
   private invocationReceived = false;
   private logger: Logger;
-  private readonly downloadHandler: DownloadHandler;
 
   constructor(ws: WebSocket, config: SessionConfig) {
     this.ws = ws;
     this.config = config;
     this.logger = config.logger ?? defaultLogger;
-    this.downloadHandler = new DownloadHandler(this.logger);
   }
 
   run(): Promise<void> {
@@ -124,120 +116,19 @@ export class WebSocketSession {
   private async executeInvocation(message: InvocationMessage): Promise<void> {
     this.logger = createLogger(message.source_id);
     this.config.uploadTracker.setLogger(this.logger);
+    this.logger.log(`Received invocation: model=${message.preferred_model}`);
 
-    const artifactsDir = message.artifacts_dir;
-    if (artifactsDir) {
-      this.artifactManager = new ArtifactManager({
-        artifactsDir,
-        uploadTracker: this.config.uploadTracker,
-        send: (msg) => this.send(msg),
-      });
-      this.artifactManager.setLogger(this.logger);
-    }
+    this.initArtifactManager(message.artifacts_dir);
 
-    const outputFormat = JSON.parse(message.output_format_json_schema_str) as {
-      type: "json_schema";
-      schema: Record<string, unknown>;
-    };
-    const model = message.preferred_model;
-
-    this.logger.log(`Received invocation: model=${model}`);
+    const runner = new InvocationRunner({
+      handler: this.config.handler,
+      logger: this.logger,
+      abortController: this.abortController,
+      send: (msg) => this.send(msg),
+    });
 
     try {
-      if (message.runtime_environment_downloadables) {
-        this.logger.log("Downloading runtime environment downloadables...");
-        for (const downloadable of message.runtime_environment_downloadables) {
-          await this.downloadHandler.download(
-            downloadable.download_url,
-            downloadable.working_dir,
-          );
-        }
-      }
-      if (message.pre_agent_invocation_commands) {
-        for (const command of message.pre_agent_invocation_commands) {
-          try {
-            this.logger.log(
-              `Executing command: ${command.command} in directory: ${command.cwd}`,
-            );
-            const commandHandler = new CommandHandler({
-              command,
-              logger: this.logger,
-              abortController: this.abortController,
-              onStdout: (stdout) =>
-                this.send({
-                  message_type: "assistant_message",
-                  text_blocks: [stdout],
-                }),
-              onStderr: (stderr) =>
-                this.send({
-                  message_type: "assistant_message",
-                  text_blocks: [stderr],
-                }),
-            });
-
-            const result = await commandHandler.execute();
-            if (result.exitCode !== 0) {
-              this.logger.error(
-                "Command failed with exit code:",
-                result.exitCode,
-              );
-              this.send({
-                message_type: "error_message",
-                error: "Command failed with exit code: " + result.exitCode,
-                metadata: {},
-              });
-              return;
-            }
-          } catch (error) {
-            this.logger.error(
-              "Error executing pre-agent invocation command:",
-              error,
-            );
-            throw error;
-          }
-        }
-      }
-
-      const sender: MessageSender = {
-        sendAssistantMessage: (textBlocks: string[]) => {
-          this.send({
-            message_type: "assistant_message",
-            text_blocks: textBlocks,
-          });
-        },
-        sendErrorMessage: (
-          error: string,
-          metadata?: Record<string, unknown>,
-        ) => {
-          this.send({
-            message_type: "error_message",
-            error,
-            metadata: metadata ?? {},
-          });
-        },
-      };
-
-      const agentResult = await this.config.handler.run(
-        {
-          systemPrompt: message.system_prompt,
-          userPrompt: message.user_prompt,
-          outputFormat,
-          model,
-          secrets: message.secrets_to_redact,
-          env: message.agent_env ?? {},
-          signal: this.abortController.signal,
-          logger: this.logger,
-        },
-        sender,
-      );
-
-      const resultMessage: ResultMessage = {
-        message_type: "result_message",
-        metadata: agentResult.metadata ?? {},
-        structured_output: agentResult.structuredOutput,
-      };
-      this.logger.log("Sending result message:", JSON.stringify(resultMessage));
-      this.send(resultMessage);
+      await runner.run(message);
     } catch (error) {
       if (this.abortController.signal.aborted) {
         this.ws.close();
@@ -251,6 +142,16 @@ export class WebSocketSession {
         metadata: {},
       });
     }
+  }
+
+  private initArtifactManager(artifactsDir?: string): void {
+    if (!artifactsDir) return;
+    this.artifactManager = new ArtifactManager({
+      artifactsDir,
+      uploadTracker: this.config.uploadTracker,
+      send: (msg) => this.send(msg),
+    });
+    this.artifactManager.setLogger(this.logger);
   }
 
   private async finalize(): Promise<void> {

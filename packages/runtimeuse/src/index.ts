@@ -31,6 +31,10 @@ export { default as CommandHandler } from "./command-handler.js";
 export type { CommandResult } from "./command-handler.js";
 export { default as DownloadHandler } from "./download-handler.js";
 
+// Invocation pipeline
+export { InvocationRunner } from "./invocation-runner.js";
+export type { InvocationRunnerConfig } from "./invocation-runner.js";
+
 // Protocol types
 export type {
   IncomingMessage,

@@ -1,0 +1,29 @@
+name: Test runtimeuse
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/runtimeuse/**"
+  pull_request:
+    paths:
+      - "packages/runtimeuse/**"
+
+defaults:
+  run:
+    working-directory: packages/runtimeuse
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22, 24]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm test
