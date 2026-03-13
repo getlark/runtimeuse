@@ -17,7 +17,6 @@ from .types import (
     OnAssistantMessageCallback,
     OnArtifactUploadRequestCallback,
     OnErrorMessageCallback,
-    IsCancelledCallback,
 )
 from .exceptions import CancelledException
 
@@ -51,6 +50,17 @@ class RuntimeUseClient:
         else:
             raise ValueError("Either ws_url or transport must be provided")
 
+        self._abort_event = asyncio.Event()
+
+    def abort(self) -> None:
+        """Signal the current invocation to cancel.
+
+        Sends a cancel message to the agent runtime and causes ``invoke``
+        to raise :class:`CancelledException`.  Safe to call from any
+        coroutine on the same event loop.
+        """
+        self._abort_event.set()
+
     async def invoke(
         self,
         invocation: InvocationMessage,
@@ -60,7 +70,6 @@ class RuntimeUseClient:
         on_assistant_message: OnAssistantMessageCallback | None = None,
         on_artifact_upload_request: OnArtifactUploadRequestCallback | None = None,
         on_error_message: OnErrorMessageCallback | None = None,
-        is_cancelled: IsCancelledCallback | None = None,
         timeout: float | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
@@ -79,20 +88,20 @@ class RuntimeUseClient:
                 artifact_upload_response_message back to the agent runtime automatically.
             on_error_message: Optional async callback invoked when an error_message is
                 received.
-            is_cancelled: Optional async callback to check if the invocation should be
-                cancelled. If provided and returns True, raises CancelledException.
             timeout: Optional timeout in seconds. Raises asyncio.TimeoutError if exceeded.
             logger: Optional logger instance. Falls back to module-level logger.
         """
         if logger is None:
             logger = _default_logger
 
+        self._abort_event = asyncio.Event()
+
         send_queue: asyncio.Queue[dict] = asyncio.Queue()
         await send_queue.put(invocation.model_dump(mode="json"))
 
         async with asyncio.timeout(timeout):
             async for message in self._transport(send_queue=send_queue):
-                if is_cancelled is not None and await is_cancelled():
+                if self._abort_event.is_set():
                     logger.info("Invocation cancelled by caller")
                     await send_queue.put(
                         CancelMessage(message_type="cancel_message").model_dump(

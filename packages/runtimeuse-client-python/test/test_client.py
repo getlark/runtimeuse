@@ -232,43 +232,32 @@ class TestArtifactUpload:
 
 class TestCancellation:
     @pytest.mark.asyncio
-    async def test_cancellation_raises(self, fake_transport, invocation):
+    async def test_abort_raises(self, fake_transport, invocation):
         filler_msg = {
             "message_type": "assistant_message",
             "text_blocks": ["working..."],
         }
 
-        cancel_called = False
-
-        async def is_cancelled() -> bool:
-            nonlocal cancel_called
-            if cancel_called:
-                return True
-            cancel_called = True
-            return False
-
         transport, client = fake_transport([filler_msg, filler_msg])
+
+        async def abort_on_first_message(_msg):
+            client.abort()
 
         with pytest.raises(CancelledException):
             await client.invoke(
                 invocation=invocation,
                 on_result_message=AsyncMock(),
                 result_message_cls=ResultMessageInterface,
-                is_cancelled=is_cancelled,
+                on_assistant_message=abort_on_first_message,
             )
 
     @pytest.mark.asyncio
-    async def test_no_cancellation_when_callback_returns_false(
-        self, fake_transport, invocation
-    ):
+    async def test_no_cancellation_without_abort(self, fake_transport, invocation):
         result_msg = {
             "message_type": "result_message",
             "structured_output": {"ok": True},
             "metadata": None,
         }
-
-        async def is_cancelled() -> bool:
-            return False
 
         transport, client = fake_transport([result_msg])
         on_result = AsyncMock()
@@ -277,7 +266,6 @@ class TestCancellation:
             invocation=invocation,
             on_result_message=on_result,
             result_message_cls=ResultMessageInterface,
-            is_cancelled=is_cancelled,
         )
 
         on_result.assert_awaited_once()

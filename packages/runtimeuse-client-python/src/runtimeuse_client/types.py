@@ -88,4 +88,3 @@ OnArtifactUploadRequestCallback = Callable[
     [ArtifactUploadRequestMessageInterface], Awaitable[ArtifactUploadResult]
 ]
 OnErrorMessageCallback = Callable[[ErrorMessageInterface], Awaitable[None]]
-IsCancelledCallback = Callable[[], Awaitable[bool]]

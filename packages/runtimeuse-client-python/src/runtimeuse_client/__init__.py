@@ -16,7 +16,6 @@ from .types import (
     OnAssistantMessageCallback,
     OnArtifactUploadRequestCallback,
     OnErrorMessageCallback,
-    IsCancelledCallback,
 )
 
 __all__ = [
@@ -38,5 +37,4 @@ __all__ = [
     "OnAssistantMessageCallback",
     "OnArtifactUploadRequestCallback",
     "OnErrorMessageCallback",
-    "IsCancelledCallback",
 ]

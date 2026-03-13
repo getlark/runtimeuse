@@ -72,7 +72,6 @@ await client.invoke(
     on_assistant_message=on_assistant,       # optional
     on_artifact_upload_request=on_artifact,  # optional -- return ArtifactUploadResult
     on_error_message=on_error,               # optional
-    is_cancelled=check_cancelled,            # optional -- async () -> bool
     timeout=300,                             # optional -- seconds
 )
 ```
@@ -92,20 +91,21 @@ async def on_artifact(request: ArtifactUploadRequestMessageInterface) -> Artifac
 
 ### Cancellation
 
-Pass an `is_cancelled` callback to cancel a running invocation. When it returns `True`, the client sends a cancel message to the runtime and raises `CancelledException`.
+Call `client.abort()` from any coroutine to cancel a running invocation. The client sends a cancel message to the runtime and `invoke` raises `CancelledException`.
 
 ```python
 from runtimeuse import CancelledException
 
-async def check_cancelled() -> bool:
-    return await db.is_run_cancelled(run_id)
+async def cancel_after_delay(client, seconds):
+    await asyncio.sleep(seconds)
+    client.abort()
 
 try:
+    asyncio.create_task(cancel_after_delay(client, 30))
     await client.invoke(
         invocation=invocation,
         on_result_message=on_result,
         result_message_cls=ResultMessageInterface,
-        is_cancelled=check_cancelled,
     )
 except CancelledException:
     print("Run was cancelled")
@@ -148,4 +148,4 @@ await client.invoke(
 
 | Class                | Description                                 |
 | -------------------- | ------------------------------------------- |
-| `CancelledException` | Raised when `is_cancelled()` returns `True` |
+| `CancelledException` | Raised when `client.abort()` is called during an invocation |
