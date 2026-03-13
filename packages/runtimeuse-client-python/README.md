@@ -30,11 +30,11 @@ async def main():
     invocation = InvocationMessage(
         message_type="invocation_message",
         source_id="my-run-001",
+        model="gpt-4.1",
         system_prompt="You are a helpful assistant.",
         user_prompt="Do the thing and return the result.",
         output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}',
         secrets_to_redact=["sk-secret-key"],
-        agent_env={"API_KEY": "sk-secret-key"},
     )
 
     async def on_result(result: ResultMessageInterface):
@@ -70,7 +70,7 @@ await client.invoke(
     on_result_message=on_result,
     result_message_cls=ResultMessageInterface,
     on_assistant_message=on_assistant,       # optional
-    on_artifact_upload_request=on_artifact,  # optional -- return (presigned_url, content_type)
+    on_artifact_upload_request=on_artifact,  # optional -- return ArtifactUploadResult
     on_error_message=on_error,               # optional
     is_cancelled=check_cancelled,            # optional -- async () -> bool
     timeout=300,                             # optional -- seconds
@@ -82,10 +82,12 @@ await client.invoke(
 When the agent runtime requests an artifact upload, provide a callback that returns a presigned URL and content type. The client sends the response back automatically.
 
 ```python
-async def on_artifact(request: ArtifactUploadRequestMessageInterface) -> tuple[str, str]:
+from runtimeuse import ArtifactUploadResult
+
+async def on_artifact(request: ArtifactUploadRequestMessageInterface) -> ArtifactUploadResult:
     presigned_url = await my_storage.create_presigned_url(request.filename)
     content_type = guess_content_type(request.filename)
-    return presigned_url, content_type
+    return ArtifactUploadResult(presigned_url=presigned_url, content_type=content_type)
 ```
 
 ### Cancellation

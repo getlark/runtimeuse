@@ -32,7 +32,7 @@ async def main():
     invocation = InvocationMessage(
         message_type="invocation_message",
         source_id="my-run-001",
-        preferred_model="gpt-4.1",
+        model="gpt-4.1",
         system_prompt="You are a helpful assistant.",
         user_prompt="What is 2 + 2?",
         output_format_json_schema_str=json.dumps({
@@ -43,7 +43,6 @@ async def main():
             },
         }),
         secrets_to_redact=[],
-        agent_env={},
     )
 
     async def on_result(result: ResultMessageInterface):

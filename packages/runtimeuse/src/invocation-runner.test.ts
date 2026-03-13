@@ -61,7 +61,7 @@ const BASE_INVOCATION_MESSAGE: InvocationMessage = {
     type: "json_schema",
     schema: { type: "object", properties: { ok: { type: "boolean" } } },
   }),
-  preferred_model: "test-model",
+  model: "test-model",
 };
 
 function createRunner(overrides?: Partial<InvocationMessage>) {
@@ -113,9 +113,8 @@ describe("InvocationRunner", () => {
           type: "json_schema",
           schema: { type: "object", properties: { ok: { type: "boolean" } } },
         },
-        model: message.preferred_model,
+        model: message.model,
         secrets: message.secrets_to_redact,
-        env: {},
         signal: abortController.signal,
         logger,
       }),
@@ -147,7 +146,7 @@ describe("InvocationRunner", () => {
     });
 
     const { runner, message } = createRunner({
-      runtime_environment_downloadables: [
+      pre_agent_downloadables: [
         {
           download_url: "https://example.com/runtime.tar.gz",
           working_dir: "/tmp",

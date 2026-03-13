@@ -37,9 +37,8 @@ export class InvocationRunner {
         systemPrompt: message.system_prompt,
         userPrompt: message.user_prompt,
         outputFormat,
-        model: message.preferred_model,
+        model: message.model,
         secrets: message.secrets_to_redact,
-        env: message.agent_env ?? {},
         signal: abortController.signal,
         logger,
       },
@@ -70,10 +69,10 @@ export class InvocationRunner {
   private async downloadRuntimeEnvironment(
     message: InvocationMessage,
   ): Promise<void> {
-    if (!message.runtime_environment_downloadables) return;
+    if (!message.pre_agent_downloadables) return;
 
     this.config.logger.log("Downloading runtime environment downloadables...");
-    for (const downloadable of message.runtime_environment_downloadables) {
+    for (const downloadable of message.pre_agent_downloadables) {
       await this.downloadHandler.download(
         downloadable.download_url,
         downloadable.working_dir,

@@ -12,6 +12,11 @@ from .types import (
     ArtifactUploadResponseMessageInterface,
     ErrorMessageInterface,
     CancelMessage,
+    ArtifactUploadResult,
+    OnAssistantMessageCallback,
+    OnArtifactUploadRequestCallback,
+    OnErrorMessageCallback,
+    IsCancelledCallback,
 )
 
 __all__ = [
@@ -29,4 +34,9 @@ __all__ = [
     "ArtifactUploadResponseMessageInterface",
     "ErrorMessageInterface",
     "CancelMessage",
+    "ArtifactUploadResult",
+    "OnAssistantMessageCallback",
+    "OnArtifactUploadRequestCallback",
+    "OnErrorMessageCallback",
+    "IsCancelledCallback",
 ]

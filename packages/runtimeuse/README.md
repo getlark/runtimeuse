@@ -159,7 +159,7 @@ wss.on("connection", (ws) => {
 
 When a client sends an `invocation_message`, the session:
 
-1. **Downloads runtime files** -- if `runtime_environment_downloadables` is set, fetches and extracts them
+1. **Downloads runtime files** -- if `pre_agent_downloadables` is set, fetches and extracts them
 2. **Runs pre-commands** -- if `pre_agent_invocation_commands` is set, executes them. If it exits 0, execution continues to the next command or the agent. Any other non-zero exit code sends an error message and terminates the invocation.
 3. **Calls `handler.run()`** -- your agent logic runs with the invocation context and a `MessageSender`
 4. **Sends `result_message`** -- the `AgentResult` from your handler is sent back to the client

@@ -22,7 +22,7 @@ async def main():
     invocation = InvocationMessage(
         message_type="invocation_message",
         source_id="my-source",
-        preferred_model="gpt-5.4",
+        model="gpt-5.4",
         pre_agent_invocation_commands=[
             CommandInterface(
                 command="echo 'Hello, world!'",
@@ -36,7 +36,6 @@ async def main():
             {"type": "json_schema", "schema": Answer.model_json_schema()}
         ),
         secrets_to_redact=[],
-        agent_env={},
     )
 
     async def on_result(result: ResultMessageInterface):

@@ -41,12 +41,9 @@ invoker = RuntimeUseInvoker(client)
 # Build an invocation
 invocation = InvocationMessage(
     message_type="invocation_message",
-    source_id="my-source",
     system_prompt="You are a helpful assistant.",
     user_prompt="Run the tests.",
-    output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}',
-    secrets_to_redact=[],
-    agent_env={},
+    output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}'
 )
 
 # Invoke and handle the result

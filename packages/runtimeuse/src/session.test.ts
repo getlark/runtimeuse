@@ -104,7 +104,7 @@ const INVOCATION_MSG = {
     type: "json_schema",
     schema: { type: "object" },
   }),
-  preferred_model: "test-model",
+  model: "test-model",
 };
 
 describe("WebSocketSession", () => {
@@ -310,7 +310,7 @@ describe("WebSocketSession", () => {
       const done = session.run();
       sendMessage(ws, {
         ...INVOCATION_MSG,
-        runtime_environment_downloadables: [
+        pre_agent_downloadables: [
           {
             download_url: "https://example.com/test.zip",
             working_dir: "/tmp/test",
