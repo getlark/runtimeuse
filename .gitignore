@@ -27,6 +27,9 @@ Thumbs.db
 *.swo
 *~
 
+# Scratch files
+scratch_*
+
 # Logs and temp
 *.log
 npm-debug.log*
