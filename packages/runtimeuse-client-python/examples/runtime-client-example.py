@@ -3,7 +3,7 @@ import asyncio
 import json
 from pydantic import BaseModel
 
-from src.runtimeuse_client import (
+from runtimeuse_client import (
     AssistantMessageInterface,
     ErrorMessageInterface,
     RuntimeUseClient,

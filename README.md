@@ -1,6 +1,8 @@
 # runtimeuse
 
-Run AI agents inside sandboxes over WebSocket. Two packages:
+[![Twitter Follow](https://img.shields.io/twitter/follow/getlark)](https://twitter.com/getlark)
+
+Communicate with AI agents inside sandboxes over WebSocket.
 
 | Package                                                    | Language   | Role                                       | Install                         |
 | ---------------------------------------------------------- | ---------- | ------------------------------------------ | ------------------------------- |
@@ -84,4 +86,4 @@ See the [runtime README](./packages/runtimeuse/README.md) and [client README](./
 
 ## License
 
-BSL-1.0
+BSL-1.1

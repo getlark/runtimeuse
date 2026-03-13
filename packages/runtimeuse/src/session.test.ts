@@ -376,7 +376,7 @@ describe("WebSocketSession", () => {
       const sent = parseSentMessages(ws);
       const error = sent.find((m) => m.message_type === "error_message");
       expect(error).toBeDefined();
-      expect(error!.error).toContain("Command failed with exit code: 1");
+      expect(error!.error).toContain("command failed with exit code: 1");
     });
 
     it("sends error and result messages when command execution throws", async () => {
