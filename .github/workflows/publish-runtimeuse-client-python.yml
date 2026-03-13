@@ -1,0 +1,27 @@
+name: Publish runtimeuse-client to PyPI
+
+on:
+  release:
+    types: [published]
+
+defaults:
+  run:
+    working-directory: packages/runtimeuse-client-python
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/runtimeuse-client-python/dist/
