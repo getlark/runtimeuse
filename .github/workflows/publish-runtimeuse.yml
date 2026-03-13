@@ -22,4 +22,4 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm install
       - run: npm run build
-      - run: npm publish --provenance --access public
+      - run: npm publish
