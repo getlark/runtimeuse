@@ -70,9 +70,9 @@ await server.start();
 ## How It Works
 
 ```
-Python Client  ──WebSocket──>  Runtime (in sandbox)  ──>  AgentHandler
-                                                           ├── openai (default)
-                                                           └── claude
+Python Client  ──> WebSocket  ──>  Runtime (in sandbox)  ──>  AgentHandler
+                                                                ├── openai (default)
+                                                                └── claude
 ```
 
 1. The client sends an `InvocationMessage` over WebSocket
@@ -81,6 +81,7 @@ Python Client  ──WebSocket──>  Runtime (in sandbox)  ──>  AgentHandl
 4. Intermediate `AssistantMessage`s stream back to the client
 5. Files in the artifacts directory are auto-detected and uploaded via presigned URL handshake
 6. A final `ResultMessage` with structured output is sent back
+7. The runtime runs post-commands (if any)
 
 See the [runtime README](./packages/runtimeuse/README.md) and [client README](./packages/runtimeuse-client-python/README.md) for full API docs.
 
