@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import Type, TypeVar
 
 import pydantic
 
@@ -10,18 +9,15 @@ from .types import (
     AgentRuntimeMessageInterface,
     CancelMessage,
     ErrorMessageInterface,
-    ResultMessageInterface,
     AssistantMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResponseMessageInterface,
-    OnAssistantMessageCallback,
-    OnArtifactUploadRequestCallback,
+    QueryOptions,
+    T,
 )
 from .exceptions import AgentRuntimeError, CancelledException
 
 _default_logger = logging.getLogger(__name__)
-
-T = TypeVar("T", bound=ResultMessageInterface)
 
 
 class RuntimeUseClient:
@@ -52,68 +48,70 @@ class RuntimeUseClient:
         self._abort_event = asyncio.Event()
 
     def abort(self) -> None:
-        """Signal the current invocation to cancel.
+        """Signal the current query to cancel.
 
-        Sends a cancel message to the agent runtime and causes ``invoke``
+        Sends a cancel message to the agent runtime and causes ``query``
         to raise :class:`CancelledException`.  Safe to call from any
         coroutine on the same event loop.
         """
         self._abort_event.set()
 
-    async def invoke(
+    async def query(
         self,
-        invocation: InvocationMessage,
-        result_message_cls: Type[T],
-        on_assistant_message: OnAssistantMessageCallback | None = None,
-        on_artifact_upload_request: OnArtifactUploadRequestCallback | None = None,
-        timeout: float | None = None,
-        logger: logging.Logger | None = None,
+        prompt: str,
+        options: QueryOptions[T],
     ) -> T:
-        """Invoke the agent runtime and process the message stream.
+        """Send a prompt to the agent runtime and return the result.
 
-        Returns the validated result message. Raises :class:`AgentRuntimeError`
-        if the agent runtime returns an error, or if the stream ends without
-        producing a result.
+        Builds an :class:`InvocationMessage` from *prompt* and *options*,
+        sends it over the transport, processes the response stream, and
+        returns the validated result message.
 
         Args:
-            invocation: The invocation message to send to the agent runtime.
-            result_message_cls: The Pydantic model class to use when validating result
-                messages.
-            on_assistant_message: Optional async callback invoked when an assistant_message
-                is received.
-            on_artifact_upload_request: Optional async callback invoked when an
-                artifact_upload_request_message is received. Should return an
-                ArtifactUploadResult; the client will send the
-                artifact_upload_response_message back to the agent runtime automatically.
-            timeout: Optional timeout in seconds. Raises asyncio.TimeoutError if exceeded.
-            logger: Optional logger instance. Falls back to module-level logger.
+            prompt: The user prompt to send to the agent.
+            options: Query configuration including system prompt, model,
+                output schema, callbacks, timeout, and result type.
 
         Raises:
             AgentRuntimeError: If the runtime sends an error or no result is produced.
-            CancelledException: If the invocation is cancelled via :meth:`abort`.
+            CancelledException: If the query is cancelled via :meth:`abort`.
             TimeoutError: If the timeout is exceeded.
         """
-        if logger is None:
-            logger = _default_logger
+        logger = options.logger or _default_logger
 
         self._abort_event = asyncio.Event()
+
+        invocation = InvocationMessage(
+            message_type="invocation_message",
+            user_prompt=prompt,
+            system_prompt=options.system_prompt,
+            model=options.model,
+            output_format_json_schema_str=options.output_format_json_schema_str,
+            source_id=options.source_id,
+            secrets_to_redact=options.secrets_to_redact,
+            artifacts_dir=options.artifacts_dir,
+            pre_agent_invocation_commands=options.pre_agent_invocation_commands,
+            post_agent_invocation_commands=options.post_agent_invocation_commands,
+            pre_agent_downloadables=options.pre_agent_downloadables,
+        )
 
         send_queue: asyncio.Queue[dict] = asyncio.Queue()
         await send_queue.put(invocation.model_dump(mode="json"))
 
+        result_message_cls = options.result_message_cls
         result: T | None = None
 
-        async with asyncio.timeout(timeout):
+        async with asyncio.timeout(options.timeout):
             async for message in self._transport(send_queue=send_queue):
                 if self._abort_event.is_set():
-                    logger.info("Invocation cancelled by caller")
+                    logger.info("Query cancelled by caller")
                     await send_queue.put(
                         CancelMessage(message_type="cancel_message").model_dump(
                             mode="json"
                         )
                     )
                     await send_queue.join()
-                    raise CancelledException("Invocation was cancelled")
+                    raise CancelledException("Query was cancelled")
 
                 try:
                     message_interface = AgentRuntimeMessageInterface.model_validate(
@@ -133,11 +131,11 @@ class RuntimeUseClient:
                     continue
 
                 elif message_interface.message_type == "assistant_message":
-                    if on_assistant_message is not None:
+                    if options.on_assistant_message is not None:
                         assistant_message_interface = (
                             AssistantMessageInterface.model_validate(message)
                         )
-                        await on_assistant_message(assistant_message_interface)
+                        await options.on_assistant_message(assistant_message_interface)
                     continue
 
                 elif message_interface.message_type == "error_message":
@@ -164,13 +162,13 @@ class RuntimeUseClient:
                     logger.info(
                         f"Received artifact upload request message from agent runtime: {message}"
                     )
-                    if on_artifact_upload_request is not None:
+                    if options.on_artifact_upload_request is not None:
                         artifact_upload_request_message_interface = (
                             ArtifactUploadRequestMessageInterface.model_validate(
                                 message
                             )
                         )
-                        upload_result = await on_artifact_upload_request(
+                        upload_result = await options.on_artifact_upload_request(
                             artifact_upload_request_message_interface
                         )
                         artifact_upload_response_message_interface = ArtifactUploadResponseMessageInterface(

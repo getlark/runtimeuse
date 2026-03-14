@@ -1,4 +1,6 @@
-from typing import Any, Awaitable, Callable, Literal
+import logging
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Callable, Generic, Literal, Type, TypeVar
 
 from pydantic import BaseModel
 from pydantic.fields import Field
@@ -84,3 +86,31 @@ OnAssistantMessageCallback = Callable[[AssistantMessageInterface], Awaitable[Non
 OnArtifactUploadRequestCallback = Callable[
     [ArtifactUploadRequestMessageInterface], Awaitable[ArtifactUploadResult]
 ]
+
+T = TypeVar("T", bound="ResultMessageInterface")
+
+
+@dataclass
+class QueryOptions(Generic[T]):
+    """Options for :meth:`RuntimeUseClient.query`.
+
+    Combines the invocation-level fields (system prompt, model, etc.) with
+    runtime behaviour settings (callbacks, timeout, result type).
+    """
+
+    system_prompt: str
+    model: str
+    output_format_json_schema_str: str
+
+    source_id: str | None = None
+    secrets_to_redact: list[str] = field(default_factory=list)
+    artifacts_dir: str | None = None
+    pre_agent_invocation_commands: list[CommandInterface] | None = None
+    post_agent_invocation_commands: list[CommandInterface] | None = None
+    pre_agent_downloadables: list[RuntimeEnvironmentDownloadableInterface] | None = None
+
+    result_message_cls: Type[T] = ResultMessageInterface  # type: ignore[assignment]
+    on_assistant_message: OnAssistantMessageCallback | None = None
+    on_artifact_upload_request: OnArtifactUploadRequestCallback | None = None
+    timeout: float | None = None
+    logger: logging.Logger | None = None

@@ -3,7 +3,7 @@ from typing import Any, AsyncGenerator
 
 import pytest
 
-from src.runtimeuse_client import RuntimeUseClient, InvocationMessage
+from src.runtimeuse_client import RuntimeUseClient, QueryOptions
 
 
 class FakeTransport:
@@ -38,18 +38,17 @@ class FakeTransport:
                 pass
 
 
-def _make_invocation(**overrides: Any) -> InvocationMessage:
+DEFAULT_PROMPT = "Do something."
+
+
+def _make_query_options(**overrides: Any) -> QueryOptions:
     defaults = dict(
-        message_type="invocation_message",
-        source_id="test-001",
         system_prompt="You are a good assistant.",
-        user_prompt="Do something.",
         output_format_json_schema_str='{"type":"object"}',
-        secrets_to_redact=[],
         model="gpt-4o",
     )
     defaults.update(overrides)
-    return InvocationMessage.model_validate(defaults)
+    return QueryOptions(**defaults)
 
 
 @pytest.fixture
@@ -65,12 +64,12 @@ def fake_transport():
 
 
 @pytest.fixture
-def invocation():
-    """Return a default InvocationMessage for tests."""
-    return _make_invocation()
+def query_options():
+    """Return default QueryOptions for tests."""
+    return _make_query_options()
 
 
 @pytest.fixture
-def make_invocation():
-    """Return the _make_invocation factory for tests that need custom fields."""
-    return _make_invocation
+def make_query_options():
+    """Return the _make_query_options factory for tests that need custom fields."""
+    return _make_query_options

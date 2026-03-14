@@ -16,7 +16,7 @@ Start the runtime inside any sandbox, then connect from outside:
 
 ```python
 import asyncio
-from runtimeuse import RuntimeUseClient, InvocationMessage, ResultMessageInterface
+from runtimeuse import RuntimeUseClient, QueryOptions
 
 async def main():
     # Start the runtime in a sandbox (provider-specific)
@@ -24,22 +24,18 @@ async def main():
     sandbox.run("npx -y runtimeuse")
     ws_url = sandbox.get_url(8080)
 
-    # Connect and invoke
+    # Connect and query
     client = RuntimeUseClient(ws_url=ws_url)
 
-    invocation = InvocationMessage(
-        message_type="invocation_message",
-        source_id="my-run-001",
-        model="gpt-4.1",
-        system_prompt="You are a helpful assistant.",
-        user_prompt="Do the thing and return the result.",
-        output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}',
-        secrets_to_redact=["sk-secret-key"],
-    )
-
-    result = await client.invoke(
-        invocation=invocation,
-        result_message_cls=ResultMessageInterface,
+    result = await client.query(
+        prompt="Do the thing and return the result.",
+        options=QueryOptions(
+            system_prompt="You are a helpful assistant.",
+            model="gpt-4.1",
+            output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}',
+            source_id="my-run-001",
+            secrets_to_redact=["sk-secret-key"],
+        ),
     )
     print(f"Success: {result.structured_output.get('success')}")
     print(f"Output: {result.structured_output}")
@@ -57,17 +53,21 @@ client = RuntimeUseClient(ws_url="ws://localhost:8080")
 
 ### RuntimeUseClient
 
-Manages the WebSocket connection to the agent runtime and runs the message loop: sends an invocation, iterates the response stream, and returns the result. Raises `AgentRuntimeError` if the runtime returns an error.
+Manages the WebSocket connection to the agent runtime and runs the message loop: sends a prompt, iterates the response stream, and returns the result. Raises `AgentRuntimeError` if the runtime returns an error.
 
 ```python
 client = RuntimeUseClient(ws_url="ws://localhost:8080")
 
-result = await client.invoke(
-    invocation=invocation,
-    result_message_cls=ResultMessageInterface,
-    on_assistant_message=on_assistant,       # optional
-    on_artifact_upload_request=on_artifact,  # optional -- return ArtifactUploadResult
-    timeout=300,                             # optional -- seconds
+result = await client.query(
+    prompt="Do the thing.",
+    options=QueryOptions(
+        system_prompt="You are a helpful assistant.",
+        model="gpt-4.1",
+        output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}',
+        on_assistant_message=on_assistant,       # optional
+        on_artifact_upload_request=on_artifact,  # optional -- return ArtifactUploadResult
+        timeout=300,                             # optional -- seconds
+    ),
 )
 ```
 
@@ -86,7 +86,7 @@ async def on_artifact(request: ArtifactUploadRequestMessageInterface) -> Artifac
 
 ### Cancellation
 
-Call `client.abort()` from any coroutine to cancel a running invocation. The client sends a cancel message to the runtime and `invoke` raises `CancelledException`.
+Call `client.abort()` from any coroutine to cancel a running query. The client sends a cancel message to the runtime and `query` raises `CancelledException`.
 
 ```python
 from runtimeuse import CancelledException
@@ -97,9 +97,13 @@ async def cancel_after_delay(client, seconds):
 
 try:
     asyncio.create_task(cancel_after_delay(client, 30))
-    result = await client.invoke(
-        invocation=invocation,
-        result_message_cls=ResultMessageInterface,
+    result = await client.query(
+        prompt="Do the thing.",
+        options=QueryOptions(
+            system_prompt="You are a helpful assistant.",
+            model="gpt-4.1",
+            output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}',
+        ),
     )
 except CancelledException:
     print("Run was cancelled")
@@ -110,31 +114,35 @@ except CancelledException:
 Subclass `ResultMessageInterface` to add domain-specific fields:
 
 ```python
-from runtimeuse import ResultMessageInterface
+from runtimeuse import ResultMessageInterface, QueryOptions
 
 class MyResultMessage(ResultMessageInterface):
     custom_score: float | None = None
 
-result = await client.invoke(
-    invocation=invocation,
-    result_message_cls=MyResultMessage,
+result = await client.query(
+    prompt="Do the thing.",
+    options=QueryOptions(
+        system_prompt="You are a helpful assistant.",
+        model="gpt-4.1",
+        output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}',
+        result_message_cls=MyResultMessage,
+    ),
 )
 print(result.custom_score)
 ```
 
 ## API Reference
 
-### Message Types
+### Types
 
 | Class                                     | Description                                            |
 | ----------------------------------------- | ------------------------------------------------------ |
-| `InvocationMessage`                       | Sent to the runtime to start an agent invocation       |
+| `QueryOptions`                            | Configuration for `client.query()` (prompt options, callbacks, timeout) |
 | `ResultMessageInterface`                  | Structured result from the agent                       |
 | `AssistantMessageInterface`               | Intermediate assistant text messages                   |
 | `ArtifactUploadRequestMessageInterface`   | Runtime requesting a presigned URL for artifact upload |
 | `ArtifactUploadResponseMessageInterface`  | Response with presigned URL sent back to runtime       |
 | `ErrorMessageInterface`                   | Error from the agent runtime                           |
-| `CancelMessage`                           | Sent to cancel a running invocation                    |
 | `CommandInterface`                        | Pre/post invocation shell command                      |
 | `RuntimeEnvironmentDownloadableInterface` | File to download into the runtime before invocation    |
 
@@ -143,4 +151,4 @@ print(result.custom_score)
 | Class                | Description                                 |
 | -------------------- | ------------------------------------------- |
 | `AgentRuntimeError`  | Raised when the agent runtime returns an error (carries `.error` and `.metadata`) |
-| `CancelledException` | Raised when `client.abort()` is called during an invocation |
+| `CancelledException` | Raised when `client.abort()` is called during a query |
