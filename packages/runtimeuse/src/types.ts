@@ -30,8 +30,9 @@ interface CancelMessage {
 interface ResultMessage {
   message_type: "result_message";
   metadata?: Record<string, unknown>;
-  text?: string;
-  structured_output?: Record<string, unknown>;
+  data:
+    | { type: "text"; text: string }
+    | { type: "structured_output"; structured_output: Record<string, unknown> };
   [key: string]: unknown;
 }
 

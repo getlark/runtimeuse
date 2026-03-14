@@ -47,18 +47,17 @@ export class InvocationRunner {
       sender,
     );
 
-    const resultMessage: OutgoingMessage =
-      agentResult.type === "text"
-        ? {
-            message_type: "result_message",
-            metadata: agentResult.metadata ?? {},
-            text: agentResult.text,
-          }
-        : {
-            message_type: "result_message",
-            metadata: agentResult.metadata ?? {},
-            structured_output: agentResult.structuredOutput,
-          };
+    const resultMessage: OutgoingMessage = {
+      message_type: "result_message",
+      metadata: agentResult.metadata ?? {},
+      data:
+        agentResult.type === "text"
+          ? { type: "text", text: agentResult.text }
+          : {
+              type: "structured_output",
+              structured_output: agentResult.structuredOutput,
+            },
+    };
 
     logger.log("Sending result message:", JSON.stringify(resultMessage));
     send(resultMessage);

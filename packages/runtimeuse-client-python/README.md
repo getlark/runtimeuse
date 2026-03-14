@@ -34,8 +34,8 @@ async def main():
             model="gpt-4.1",
         ),
     )
-    assert isinstance(result, TextResult)
-    print(result.text)
+    assert isinstance(result.data, TextResult)
+    print(result.data.text)
 
     # Structured response (with output schema)
     result = await client.query(
@@ -46,8 +46,9 @@ async def main():
             output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}',
         ),
     )
-    assert isinstance(result, StructuredOutputResult)
-    print(result.structured_output)
+    assert isinstance(result.data, StructuredOutputResult)
+    print(result.data.structured_output)
+    print(result.metadata)  # execution metadata
 
 asyncio.run(main())
 ```
@@ -62,9 +63,9 @@ client = RuntimeUseClient(ws_url="ws://localhost:8080")
 
 ### RuntimeUseClient
 
-Manages the WebSocket connection to the agent runtime and runs the message loop: sends a prompt, iterates the response stream, and returns the result. Raises `AgentRuntimeError` if the runtime returns an error.
+Manages the WebSocket connection to the agent runtime and runs the message loop: sends a prompt, iterates the response stream, and returns a `ResultMessageInterface`. Raises `AgentRuntimeError` if the runtime returns an error.
 
-`query()` returns a `QueryResult` -- either a `TextResult` or `StructuredOutputResult` depending on whether `output_format_json_schema_str` is provided.
+`query()` returns a `ResultMessageInterface` with `.result` (a `TextResult` or `StructuredOutputResult`) and `.metadata`.
 
 ```python
 client = RuntimeUseClient(ws_url="ws://localhost:8080")
@@ -81,10 +82,12 @@ result = await client.query(
     ),
 )
 
-if isinstance(result, TextResult):
-    print(result.text)
-elif isinstance(result, StructuredOutputResult):
-    print(result.structured_output)
+if isinstance(result.data, TextResult):
+    print(result.data.text)
+elif isinstance(result.data, StructuredOutputResult):
+    print(result.data.structured_output)
+
+print(result.metadata)  # execution metadata
 ```
 
 ### Artifact Upload Handshake
@@ -131,9 +134,10 @@ except CancelledException:
 | Class                                     | Description                                            |
 | ----------------------------------------- | ------------------------------------------------------ |
 | `QueryOptions`                            | Configuration for `client.query()` (prompt options, callbacks, timeout) |
-| `TextResult`                              | Result when no output schema is specified (`.text`)    |
-| `StructuredOutputResult`                  | Result when an output schema is specified (`.structured_output`) |
-| `QueryResult`                             | Union type: `TextResult \| StructuredOutputResult`     |
+| `ResultMessageInterface`                  | Wire-format result from `query()` (`.data`, `.metadata`) |
+| `TextResult`                              | Result variant when no output schema is specified (`.text`) |
+| `StructuredOutputResult`                  | Result variant when an output schema is specified (`.structured_output`) |
+
 | `AssistantMessageInterface`               | Intermediate assistant text messages                   |
 | `ArtifactUploadRequestMessageInterface`   | Runtime requesting a presigned URL for artifact upload |
 | `ArtifactUploadResponseMessageInterface`  | Response with presigned URL sent back to runtime       |

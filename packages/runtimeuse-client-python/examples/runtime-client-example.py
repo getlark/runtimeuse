@@ -43,8 +43,8 @@ async def main():
                 on_assistant_message=on_assistant_message,
             ),
         )
-        assert isinstance(result, StructuredOutputResult)
-        print(f"Result: {result.structured_output}")
+        assert isinstance(result.data, StructuredOutputResult)
+        print(f"Result: {result.data.structured_output}")
     except AgentRuntimeError as e:
         print(f"Error: {e.error}")
 

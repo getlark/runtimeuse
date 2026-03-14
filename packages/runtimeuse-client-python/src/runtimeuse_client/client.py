@@ -10,9 +10,6 @@ from .types import (
     CancelMessage,
     ErrorMessageInterface,
     ResultMessageInterface,
-    TextResult,
-    StructuredOutputResult,
-    QueryResult,
     AssistantMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResponseMessageInterface,
@@ -63,16 +60,16 @@ class RuntimeUseClient:
         self,
         prompt: str,
         options: QueryOptions,
-    ) -> QueryResult:
+    ) -> ResultMessageInterface:
         """Send a prompt to the agent runtime and return the result.
 
         Builds an :class:`InvocationMessage` from *prompt* and *options*,
         sends it over the transport, processes the response stream, and
-        returns the result.
+        returns the :class:`ResultMessageInterface`.
 
-        When ``options.output_format_json_schema_str`` is provided the
-        runtime returns a :class:`StructuredOutputResult`.  Otherwise it
-        returns a :class:`TextResult`.
+        Access ``result.data`` for the :class:`TextResult` or
+        :class:`StructuredOutputResult`, and ``result.metadata`` for
+        execution metadata.
 
         Args:
             prompt: The user prompt to send to the agent.
@@ -146,8 +143,8 @@ class RuntimeUseClient:
 
                 elif message_interface.message_type == "error_message":
                     try:
-                        error_message_interface = (
-                            ErrorMessageInterface.model_validate(message)
+                        error_message_interface = ErrorMessageInterface.model_validate(
+                            message
                         )
                     except pydantic.ValidationError:
                         logger.error(
@@ -199,17 +196,4 @@ class RuntimeUseClient:
         if wire_result is None:
             raise AgentRuntimeError("No result message received")
 
-        if wire_result.structured_output is not None:
-            return StructuredOutputResult(
-                structured_output=wire_result.structured_output,
-                metadata=wire_result.metadata,
-            )
-        if wire_result.text is not None:
-            return TextResult(
-                text=wire_result.text,
-                metadata=wire_result.metadata,
-            )
-
-        raise AgentRuntimeError(
-            "Result message has neither text nor structured_output"
-        )
+        return wire_result

@@ -7,6 +7,7 @@ from test.conftest import DEFAULT_PROMPT
 from src.runtimeuse_client import (
     RuntimeUseClient,
     QueryOptions,
+    ResultMessageInterface,
     TextResult,
     StructuredOutputResult,
     AssistantMessageInterface,
@@ -19,13 +20,13 @@ from src.runtimeuse_client import (
 
 STRUCTURED_RESULT_MSG = {
     "message_type": "result_message",
-    "structured_output": {"ok": True},
+    "data": {"type": "structured_output", "structured_output": {"ok": True}},
     "metadata": None,
 }
 
 TEXT_RESULT_MSG = {
     "message_type": "result_message",
-    "text": "Hello, world!",
+    "data": {"type": "text", "text": "Hello, world!"},
     "metadata": None,
 }
 
@@ -40,7 +41,7 @@ class TestResultMessage:
     async def test_structured_output_result(self, fake_transport, make_query_options):
         result_msg = {
             "message_type": "result_message",
-            "structured_output": {"success": True},
+            "data": {"type": "structured_output", "structured_output": {"success": True}},
             "metadata": {"duration_ms": 50},
         }
         transport, client = fake_transport([result_msg])
@@ -52,15 +53,16 @@ class TestResultMessage:
             ),
         )
 
-        assert isinstance(result, StructuredOutputResult)
-        assert result.structured_output == {"success": True}
+        assert isinstance(result, ResultMessageInterface)
+        assert isinstance(result.data, StructuredOutputResult)
+        assert result.data.structured_output == {"success": True}
         assert result.metadata == {"duration_ms": 50}
 
     @pytest.mark.asyncio
     async def test_text_result(self, fake_transport, query_options):
         result_msg = {
             "message_type": "result_message",
-            "text": "The answer is 42.",
+            "data": {"type": "text", "text": "The answer is 42."},
             "metadata": None,
         }
         transport, client = fake_transport([result_msg])
@@ -70,8 +72,8 @@ class TestResultMessage:
             options=query_options,
         )
 
-        assert isinstance(result, TextResult)
-        assert result.text == "The answer is 42."
+        assert isinstance(result.data, TextResult)
+        assert result.data.text == "The answer is 42."
 
     @pytest.mark.asyncio
     async def test_no_result_raises(self, fake_transport, query_options):
@@ -84,16 +86,13 @@ class TestResultMessage:
             )
 
     @pytest.mark.asyncio
-    async def test_empty_result_raises(self, fake_transport, query_options):
+    async def test_missing_result_field_raises(self, fake_transport, query_options):
         result_msg = {
             "message_type": "result_message",
         }
         transport, client = fake_transport([result_msg])
 
-        with pytest.raises(
-            AgentRuntimeError,
-            match="neither text nor structured_output",
-        ):
+        with pytest.raises(Exception):
             await client.query(
                 prompt=DEFAULT_PROMPT,
                 options=query_options,
@@ -278,8 +277,8 @@ class TestCancellation:
             options=query_options,
         )
 
-        assert isinstance(result, TextResult)
-        assert result.text == "Hello, world!"
+        assert isinstance(result.data, TextResult)
+        assert result.data.text == "Hello, world!"
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +320,7 @@ class TestUnknownMessages:
             options=query_options,
         )
 
-        assert isinstance(result, TextResult)
+        assert isinstance(result.data, TextResult)
 
     @pytest.mark.asyncio
     async def test_completely_malformed_message_skipped(
@@ -335,7 +334,7 @@ class TestUnknownMessages:
             options=query_options,
         )
 
-        assert isinstance(result, TextResult)
+        assert isinstance(result.data, TextResult)
 
 
 # ---------------------------------------------------------------------------
@@ -357,7 +356,7 @@ class TestMultipleMessages:
             },
             {
                 "message_type": "result_message",
-                "structured_output": {"answer": 42},
+                "data": {"type": "structured_output", "structured_output": {"answer": 42}},
                 "metadata": {"duration_ms": 100},
             },
         ]
@@ -371,8 +370,8 @@ class TestMultipleMessages:
         )
 
         assert on_assistant.await_count == 2
-        assert isinstance(result, StructuredOutputResult)
-        assert result.structured_output == {"answer": 42}
+        assert isinstance(result.data, StructuredOutputResult)
+        assert result.data.structured_output == {"answer": 42}
 
 
 # ---------------------------------------------------------------------------
@@ -411,7 +410,9 @@ class TestInvocationSent:
         invocation_msgs = [
             m for m in transport.sent if m.get("message_type") == "invocation_message"
         ]
-        assert invocation_msgs[0]["output_format_json_schema_str"] == '{"type":"object"}'
+        assert (
+            invocation_msgs[0]["output_format_json_schema_str"] == '{"type":"object"}'
+        )
 
     @pytest.mark.asyncio
     async def test_schema_none_when_omitted(self, fake_transport, query_options):

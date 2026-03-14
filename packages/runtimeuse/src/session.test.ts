@@ -262,7 +262,7 @@ describe("WebSocketSession", () => {
       const sent = parseSentMessages(ws);
       const result = sent.find((m) => m.message_type === "result_message");
       expect(result).toBeDefined();
-      expect(result!.structured_output.success).toBe(true);
+      expect(result!.data.structured_output.success).toBe(true);
       expect(result!.metadata).toMatchObject({ duration_ms: 1000 });
     });
 

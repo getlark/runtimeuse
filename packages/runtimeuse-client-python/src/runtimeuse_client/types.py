@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Literal, Union
+from typing import Any, Awaitable, Callable, Literal
 
 from pydantic import BaseModel
 from pydantic.fields import Field
@@ -42,34 +42,26 @@ class InvocationMessage(BaseModel):
     pre_agent_downloadables: list[RuntimeEnvironmentDownloadableInterface] | None = None
 
 
-class ResultMessageInterface(AgentRuntimeMessageInterface):
-    """Wire-format result message from the agent runtime.
-
-    Exactly one of ``text`` or ``structured_output`` will be present
-    depending on whether an output schema was provided in the invocation.
-    """
-
-    message_type: Literal["result_message"]
-    metadata: dict[str, Any] | None = None
-    text: str | None = None
-    structured_output: dict[str, Any] | None = None
-
-
 class TextResult(BaseModel):
-    """Result returned when no output schema is specified."""
+    """Result variant returned when no output schema is specified."""
 
+    type: Literal["text"] = "text"
     text: str
-    metadata: dict[str, Any] | None = None
 
 
 class StructuredOutputResult(BaseModel):
-    """Result returned when an output schema is specified."""
+    """Result variant returned when an output schema is specified."""
 
+    type: Literal["structured_output"] = "structured_output"
     structured_output: dict[str, Any]
+
+
+class ResultMessageInterface(AgentRuntimeMessageInterface):
+    """Wire-format result message from the agent runtime."""
+
+    message_type: Literal["result_message"]
     metadata: dict[str, Any] | None = None
-
-
-QueryResult = Union[TextResult, StructuredOutputResult]
+    data: TextResult | StructuredOutputResult = Field(discriminator="type")
 
 
 class AssistantMessageInterface(AgentRuntimeMessageInterface):

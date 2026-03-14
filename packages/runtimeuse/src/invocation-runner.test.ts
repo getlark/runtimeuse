@@ -128,7 +128,7 @@ describe("InvocationRunner", () => {
     expect(send).toHaveBeenCalledWith({
       message_type: "result_message",
       metadata: { duration_ms: 12 },
-      structured_output: { ok: true },
+      data: { type: "structured_output", structured_output: { ok: true } },
     });
   });
 
@@ -244,7 +244,7 @@ describe("InvocationRunner", () => {
     expect(send).toHaveBeenCalledWith({
       message_type: "result_message",
       metadata: {},
-      structured_output: { ok: true },
+      data: { type: "structured_output", structured_output: { ok: true } },
     });
   });
 
@@ -266,7 +266,7 @@ describe("InvocationRunner", () => {
     expect(send).toHaveBeenCalledWith({
       message_type: "result_message",
       metadata: { model: "test" },
-      text: "Hello, world!",
+      data: { type: "text", text: "Hello, world!" },
     });
   });
 

@@ -10,7 +10,7 @@ from .types import (
     ResultMessageInterface,
     TextResult,
     StructuredOutputResult,
-    QueryResult,
+
     AssistantMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResponseMessageInterface,
@@ -35,7 +35,7 @@ __all__ = [
     "ResultMessageInterface",
     "TextResult",
     "StructuredOutputResult",
-    "QueryResult",
+
     "AssistantMessageInterface",
     "ArtifactUploadRequestMessageInterface",
     "ArtifactUploadResponseMessageInterface",
