@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Callable, Awaitable, Type, TypeVar
+from typing import Type, TypeVar
 
 import pydantic
 
@@ -16,9 +16,8 @@ from .types import (
     ArtifactUploadResponseMessageInterface,
     OnAssistantMessageCallback,
     OnArtifactUploadRequestCallback,
-    OnErrorMessageCallback,
 )
-from .exceptions import CancelledException
+from .exceptions import AgentRuntimeError, CancelledException
 
 _default_logger = logging.getLogger(__name__)
 
@@ -64,20 +63,20 @@ class RuntimeUseClient:
     async def invoke(
         self,
         invocation: InvocationMessage,
-        # this should be response instead?
-        on_result_message: Callable[[T], Awaitable[None]],
         result_message_cls: Type[T],
         on_assistant_message: OnAssistantMessageCallback | None = None,
         on_artifact_upload_request: OnArtifactUploadRequestCallback | None = None,
-        on_error_message: OnErrorMessageCallback | None = None,
         timeout: float | None = None,
         logger: logging.Logger | None = None,
-    ) -> None:
+    ) -> T:
         """Invoke the agent runtime and process the message stream.
+
+        Returns the validated result message. Raises :class:`AgentRuntimeError`
+        if the agent runtime returns an error, or if the stream ends without
+        producing a result.
 
         Args:
             invocation: The invocation message to send to the agent runtime.
-            on_result_message: Async callback invoked when a result_message is received.
             result_message_cls: The Pydantic model class to use when validating result
                 messages.
             on_assistant_message: Optional async callback invoked when an assistant_message
@@ -86,10 +85,13 @@ class RuntimeUseClient:
                 artifact_upload_request_message is received. Should return an
                 ArtifactUploadResult; the client will send the
                 artifact_upload_response_message back to the agent runtime automatically.
-            on_error_message: Optional async callback invoked when an error_message is
-                received.
             timeout: Optional timeout in seconds. Raises asyncio.TimeoutError if exceeded.
             logger: Optional logger instance. Falls back to module-level logger.
+
+        Raises:
+            AgentRuntimeError: If the runtime sends an error or no result is produced.
+            CancelledException: If the invocation is cancelled via :meth:`abort`.
+            TimeoutError: If the timeout is exceeded.
         """
         if logger is None:
             logger = _default_logger
@@ -98,6 +100,8 @@ class RuntimeUseClient:
 
         send_queue: asyncio.Queue[dict] = asyncio.Queue()
         await send_queue.put(invocation.model_dump(mode="json"))
+
+        result: T | None = None
 
         async with asyncio.timeout(timeout):
             async for message in self._transport(send_queue=send_queue):
@@ -122,13 +126,10 @@ class RuntimeUseClient:
                     continue
 
                 if message_interface.message_type == "result_message":
-                    result_message_interface = result_message_cls.model_validate(
-                        message
-                    )
+                    result = result_message_cls.model_validate(message)
                     logger.info(
                         f"Received result message from agent runtime: {message}"
                     )
-                    await on_result_message(result_message_interface)
                     continue
 
                 elif message_interface.message_type == "assistant_message":
@@ -140,21 +141,22 @@ class RuntimeUseClient:
                     continue
 
                 elif message_interface.message_type == "error_message":
-                    if on_error_message is not None:
-                        try:
-                            error_message_interface = (
-                                ErrorMessageInterface.model_validate(message)
-                            )
-                            logger.error(
-                                f"Error from agent runtime: {error_message_interface}",
-                            )
-                            await on_error_message(error_message_interface)
-                        except pydantic.ValidationError:
-                            logger.error(
-                                f"Received unknown error message from agent runtime: {message}",
-                            )
-                            continue
-                    continue
+                    try:
+                        error_message_interface = (
+                            ErrorMessageInterface.model_validate(message)
+                        )
+                    except pydantic.ValidationError:
+                        logger.error(
+                            f"Received malformed error message from agent runtime: {message}",
+                        )
+                        raise AgentRuntimeError(str(message))
+                    logger.error(
+                        f"Error from agent runtime: {error_message_interface}",
+                    )
+                    raise AgentRuntimeError(
+                        error_message_interface.error,
+                        metadata=error_message_interface.metadata,
+                    )
 
                 elif (
                     message_interface.message_type == "artifact_upload_request_message"
@@ -189,3 +191,8 @@ class RuntimeUseClient:
                     logger.info(
                         f"Received non-result message from agent runtime: {message}"
                     )
+
+        if result is None:
+            raise AgentRuntimeError("No result message received")
+
+        return result

@@ -37,15 +37,12 @@ async def main():
         secrets_to_redact=["sk-secret-key"],
     )
 
-    async def on_result(result: ResultMessageInterface):
-        print(f"Success: {result.structured_output.get('success')}")
-        print(f"Output: {result.structured_output}")
-
-    await client.invoke(
+    result = await client.invoke(
         invocation=invocation,
-        on_result_message=on_result,
         result_message_cls=ResultMessageInterface,
     )
+    print(f"Success: {result.structured_output.get('success')}")
+    print(f"Output: {result.structured_output}")
 
 asyncio.run(main())
 ```
@@ -60,18 +57,16 @@ client = RuntimeUseClient(ws_url="ws://localhost:8080")
 
 ### RuntimeUseClient
 
-Manages the WebSocket connection to the agent runtime and runs the message loop: sends an invocation, iterates the response stream, and dispatches typed messages to your callbacks.
+Manages the WebSocket connection to the agent runtime and runs the message loop: sends an invocation, iterates the response stream, and returns the result. Raises `AgentRuntimeError` if the runtime returns an error.
 
 ```python
 client = RuntimeUseClient(ws_url="ws://localhost:8080")
 
-await client.invoke(
+result = await client.invoke(
     invocation=invocation,
-    on_result_message=on_result,
     result_message_cls=ResultMessageInterface,
     on_assistant_message=on_assistant,       # optional
     on_artifact_upload_request=on_artifact,  # optional -- return ArtifactUploadResult
-    on_error_message=on_error,               # optional
     timeout=300,                             # optional -- seconds
 )
 ```
@@ -102,9 +97,8 @@ async def cancel_after_delay(client, seconds):
 
 try:
     asyncio.create_task(cancel_after_delay(client, 30))
-    await client.invoke(
+    result = await client.invoke(
         invocation=invocation,
-        on_result_message=on_result,
         result_message_cls=ResultMessageInterface,
     )
 except CancelledException:
@@ -121,11 +115,11 @@ from runtimeuse import ResultMessageInterface
 class MyResultMessage(ResultMessageInterface):
     custom_score: float | None = None
 
-await client.invoke(
+result = await client.invoke(
     invocation=invocation,
-    on_result_message=handle_my_result,
     result_message_cls=MyResultMessage,
 )
+print(result.custom_score)
 ```
 
 ## API Reference
@@ -148,4 +142,5 @@ await client.invoke(
 
 | Class                | Description                                 |
 | -------------------- | ------------------------------------------- |
+| `AgentRuntimeError`  | Raised when the agent runtime returns an error (carries `.error` and `.metadata`) |
 | `CancelledException` | Raised when `client.abort()` is called during an invocation |

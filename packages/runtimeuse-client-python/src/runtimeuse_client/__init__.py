@@ -1,6 +1,6 @@
 from .client import RuntimeUseClient
 from .transports import Transport, WebSocketTransport
-from .exceptions import CancelledException
+from .exceptions import AgentRuntimeError, CancelledException
 from .types import (
     AgentRuntimeMessageInterface,
     RuntimeEnvironmentDownloadableInterface,
@@ -15,13 +15,13 @@ from .types import (
     ArtifactUploadResult,
     OnAssistantMessageCallback,
     OnArtifactUploadRequestCallback,
-    OnErrorMessageCallback,
 )
 
 __all__ = [
     "RuntimeUseClient",
     "Transport",
     "WebSocketTransport",
+    "AgentRuntimeError",
     "CancelledException",
     "AgentRuntimeMessageInterface",
     "RuntimeEnvironmentDownloadableInterface",
@@ -36,5 +36,4 @@ __all__ = [
     "ArtifactUploadResult",
     "OnAssistantMessageCallback",
     "OnArtifactUploadRequestCallback",
-    "OnErrorMessageCallback",
 ]

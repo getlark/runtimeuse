@@ -10,8 +10,16 @@ from src.runtimeuse_client import (
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResult,
     ErrorMessageInterface,
+    AgentRuntimeError,
     CancelledException,
 )
+
+
+RESULT_MSG = {
+    "message_type": "result_message",
+    "structured_output": {"ok": True},
+    "metadata": None,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -21,25 +29,21 @@ from src.runtimeuse_client import (
 
 class TestResultMessage:
     @pytest.mark.asyncio
-    async def test_result_message_dispatched(self, fake_transport, invocation):
+    async def test_result_message_returned(self, fake_transport, invocation):
         result_msg = {
             "message_type": "result_message",
             "structured_output": {"success": True},
             "metadata": None,
         }
         transport, client = fake_transport([result_msg])
-        on_result = AsyncMock()
 
-        await client.invoke(
+        result = await client.invoke(
             invocation=invocation,
-            on_result_message=on_result,
             result_message_cls=ResultMessageInterface,
         )
 
-        on_result.assert_awaited_once()
-        received = on_result.call_args[0][0]
-        assert isinstance(received, ResultMessageInterface)
-        assert received.structured_output == {"success": True}
+        assert isinstance(result, ResultMessageInterface)
+        assert result.structured_output == {"success": True}
 
     @pytest.mark.asyncio
     async def test_custom_result_class(self, fake_transport, invocation):
@@ -53,17 +57,24 @@ class TestResultMessage:
             "custom_field": "hello",
         }
         transport, client = fake_transport([result_msg])
-        on_result = AsyncMock()
 
-        await client.invoke(
+        result = await client.invoke(
             invocation=invocation,
-            on_result_message=on_result,
             result_message_cls=CustomResult,
         )
 
-        received = on_result.call_args[0][0]
-        assert isinstance(received, CustomResult)
-        assert received.custom_field == "hello"
+        assert isinstance(result, CustomResult)
+        assert result.custom_field == "hello"
+
+    @pytest.mark.asyncio
+    async def test_no_result_raises(self, fake_transport, invocation):
+        transport, client = fake_transport([])
+
+        with pytest.raises(AgentRuntimeError, match="No result message received"):
+            await client.invoke(
+                invocation=invocation,
+                result_message_cls=ResultMessageInterface,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -78,12 +89,11 @@ class TestAssistantMessage:
             "message_type": "assistant_message",
             "text_blocks": ["Hello", "World"],
         }
-        transport, client = fake_transport([assistant_msg])
+        transport, client = fake_transport([assistant_msg, RESULT_MSG])
         on_assistant = AsyncMock()
 
         await client.invoke(
             invocation=invocation,
-            on_result_message=AsyncMock(),
             result_message_cls=ResultMessageInterface,
             on_assistant_message=on_assistant,
         )
@@ -101,11 +111,10 @@ class TestAssistantMessage:
             "message_type": "assistant_message",
             "text_blocks": ["ignored"],
         }
-        transport, client = fake_transport([assistant_msg])
+        transport, client = fake_transport([assistant_msg, RESULT_MSG])
 
         await client.invoke(
             invocation=invocation,
-            on_result_message=AsyncMock(),
             result_message_cls=ResultMessageInterface,
             on_assistant_message=None,
         )
@@ -118,44 +127,39 @@ class TestAssistantMessage:
 
 class TestErrorMessage:
     @pytest.mark.asyncio
-    async def test_error_message_dispatched(self, fake_transport, invocation):
+    async def test_error_message_raises(self, fake_transport, invocation):
         error_msg = {
             "message_type": "error_message",
             "error": "something broke",
             "metadata": {"code": 500},
         }
         transport, client = fake_transport([error_msg])
-        on_error = AsyncMock()
 
-        await client.invoke(
-            invocation=invocation,
-            on_result_message=AsyncMock(),
-            result_message_cls=ResultMessageInterface,
-            on_error_message=on_error,
-        )
+        with pytest.raises(AgentRuntimeError, match="something broke") as exc_info:
+            await client.invoke(
+                invocation=invocation,
+                result_message_cls=ResultMessageInterface,
+            )
 
-        on_error.assert_awaited_once()
-        received = on_error.call_args[0][0]
-        assert isinstance(received, ErrorMessageInterface)
-        assert received.error == "something broke"
-        assert received.metadata == {"code": 500}
+        assert exc_info.value.error == "something broke"
+        assert exc_info.value.metadata == {"code": 500}
 
     @pytest.mark.asyncio
-    async def test_error_message_ignored_without_callback(
-        self, fake_transport, invocation
-    ):
+    async def test_error_without_metadata(self, fake_transport, invocation):
         error_msg = {
             "message_type": "error_message",
-            "error": "ignored",
+            "error": "oops",
         }
         transport, client = fake_transport([error_msg])
 
-        await client.invoke(
-            invocation=invocation,
-            on_result_message=AsyncMock(),
-            result_message_cls=ResultMessageInterface,
-            on_error_message=None,
-        )
+        with pytest.raises(AgentRuntimeError, match="oops") as exc_info:
+            await client.invoke(
+                invocation=invocation,
+                result_message_cls=ResultMessageInterface,
+            )
+
+        assert exc_info.value.error == "oops"
+        assert exc_info.value.metadata is None
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +193,6 @@ class TestArtifactUpload:
 
         await client.invoke(
             invocation=invocation,
-            on_result_message=AsyncMock(),
             result_message_cls=ResultMessageInterface,
             on_artifact_upload_request=on_artifact,
         )
@@ -215,11 +218,10 @@ class TestArtifactUpload:
             "filename": "file.txt",
             "filepath": "/tmp/file.txt",
         }
-        transport, client = fake_transport([upload_request])
+        transport, client = fake_transport([upload_request, RESULT_MSG])
 
         await client.invoke(
             invocation=invocation,
-            on_result_message=AsyncMock(),
             result_message_cls=ResultMessageInterface,
             on_artifact_upload_request=None,
         )
@@ -246,7 +248,6 @@ class TestCancellation:
         with pytest.raises(CancelledException):
             await client.invoke(
                 invocation=invocation,
-                on_result_message=AsyncMock(),
                 result_message_cls=ResultMessageInterface,
                 on_assistant_message=abort_on_first_message,
             )
@@ -260,15 +261,13 @@ class TestCancellation:
         }
 
         transport, client = fake_transport([result_msg])
-        on_result = AsyncMock()
 
-        await client.invoke(
+        result = await client.invoke(
             invocation=invocation,
-            on_result_message=on_result,
             result_message_cls=ResultMessageInterface,
         )
 
-        on_result.assert_awaited_once()
+        assert result.structured_output == {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -290,7 +289,6 @@ class TestTimeout:
         with pytest.raises(TimeoutError):
             await client.invoke(
                 invocation=invocation,
-                on_result_message=AsyncMock(),
                 result_message_cls=ResultMessageInterface,
                 timeout=0.05,
             )
@@ -305,42 +303,28 @@ class TestUnknownMessages:
     @pytest.mark.asyncio
     async def test_unknown_message_type_skipped(self, fake_transport, invocation):
         unknown_msg = {"message_type": "unknown_type", "data": 123}
-        result_msg = {
-            "message_type": "result_message",
-            "structured_output": {"ok": True},
-            "metadata": None,
-        }
-        transport, client = fake_transport([unknown_msg, result_msg])
-        on_result = AsyncMock()
+        transport, client = fake_transport([unknown_msg, RESULT_MSG])
 
-        await client.invoke(
+        result = await client.invoke(
             invocation=invocation,
-            on_result_message=on_result,
             result_message_cls=ResultMessageInterface,
         )
 
-        on_result.assert_awaited_once()
+        assert result.structured_output == {"ok": True}
 
     @pytest.mark.asyncio
     async def test_completely_malformed_message_skipped(
         self, fake_transport, invocation
     ):
         bad_msg = {"no_message_type_key": True}
-        result_msg = {
-            "message_type": "result_message",
-            "structured_output": {"ok": True},
-            "metadata": None,
-        }
-        transport, client = fake_transport([bad_msg, result_msg])
-        on_result = AsyncMock()
+        transport, client = fake_transport([bad_msg, RESULT_MSG])
 
-        await client.invoke(
+        result = await client.invoke(
             invocation=invocation,
-            on_result_message=on_result,
             result_message_cls=ResultMessageInterface,
         )
 
-        on_result.assert_awaited_once()
+        assert result.structured_output == {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -361,11 +345,6 @@ class TestMultipleMessages:
                 "text_blocks": ["Still working..."],
             },
             {
-                "message_type": "error_message",
-                "error": "non-fatal warning",
-                "metadata": None,
-            },
-            {
                 "message_type": "result_message",
                 "structured_output": {"answer": 42},
                 "metadata": {"duration_ms": 100},
@@ -373,22 +352,16 @@ class TestMultipleMessages:
         ]
         transport, client = fake_transport(messages)
 
-        on_result = AsyncMock()
         on_assistant = AsyncMock()
-        on_error = AsyncMock()
 
-        await client.invoke(
+        result = await client.invoke(
             invocation=invocation,
-            on_result_message=on_result,
             result_message_cls=ResultMessageInterface,
             on_assistant_message=on_assistant,
-            on_error_message=on_error,
         )
 
         assert on_assistant.await_count == 2
-        on_error.assert_awaited_once()
-        on_result.assert_awaited_once()
-        assert on_result.call_args[0][0].structured_output == {"answer": 42}
+        assert result.structured_output == {"answer": 42}
 
 
 # ---------------------------------------------------------------------------
@@ -399,12 +372,11 @@ class TestMultipleMessages:
 class TestInvocationSent:
     @pytest.mark.asyncio
     async def test_invocation_message_queued(self, fake_transport, make_invocation):
-        transport, client = fake_transport([])
+        transport, client = fake_transport([RESULT_MSG])
 
         invocation = make_invocation(source_id="capture-test")
         await client.invoke(
             invocation=invocation,
-            on_result_message=AsyncMock(),
             result_message_cls=ResultMessageInterface,
         )
 

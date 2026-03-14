@@ -37,10 +37,7 @@ class InvocationMessage(BaseModel):
     pre_agent_invocation_commands: list[CommandInterface] | None = None
     post_agent_invocation_commands: list[CommandInterface] | None = None
     model: str
-
-    pre_agent_downloadables: (
-        list[RuntimeEnvironmentDownloadableInterface] | None
-    ) = None
+    pre_agent_downloadables: list[RuntimeEnvironmentDownloadableInterface] | None = None
 
 
 class ResultMessageInterface(AgentRuntimeMessageInterface):
@@ -87,4 +84,3 @@ OnAssistantMessageCallback = Callable[[AssistantMessageInterface], Awaitable[Non
 OnArtifactUploadRequestCallback = Callable[
     [ArtifactUploadRequestMessageInterface], Awaitable[ArtifactUploadResult]
 ]
-OnErrorMessageCallback = Callable[[ErrorMessageInterface], Awaitable[None]]

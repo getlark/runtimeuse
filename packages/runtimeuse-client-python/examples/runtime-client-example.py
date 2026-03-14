@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from src.runtimeuse_client import (
     AssistantMessageInterface,
-    ErrorMessageInterface,
+    AgentRuntimeError,
     RuntimeUseClient,
     InvocationMessage,
     ResultMessageInterface,
@@ -38,22 +38,18 @@ async def main():
         secrets_to_redact=[],
     )
 
-    async def on_result(result: ResultMessageInterface):
-        print(f"Result: {result.structured_output}")
-
     async def on_assistant_message(message: AssistantMessageInterface):
         print(f"Assistant message: {message.text_blocks}")
 
-    async def on_error_message(message: ErrorMessageInterface):
-        print(f"Error message: {message.error}")
-
-    await client.invoke(
-        invocation=invocation,
-        on_result_message=on_result,
-        result_message_cls=ResultMessageInterface,
-        on_assistant_message=on_assistant_message,
-        on_error_message=on_error_message,
-    )
+    try:
+        result = await client.invoke(
+            invocation=invocation,
+            result_message_cls=ResultMessageInterface,
+            on_assistant_message=on_assistant_message,
+        )
+        print(f"Result: {result.structured_output}")
+    except AgentRuntimeError as e:
+        print(f"Error: {e.error}")
 
 
 if __name__ == "__main__":
