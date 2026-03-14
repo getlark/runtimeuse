@@ -109,28 +109,6 @@ except CancelledException:
     print("Run was cancelled")
 ```
 
-### Custom Result Types
-
-Subclass `ResultMessageInterface` to add domain-specific fields:
-
-```python
-from runtimeuse import ResultMessageInterface, QueryOptions
-
-class MyResultMessage(ResultMessageInterface):
-    custom_score: float | None = None
-
-result = await client.query(
-    prompt="Do the thing.",
-    options=QueryOptions(
-        system_prompt="You are a helpful assistant.",
-        model="gpt-4.1",
-        output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}',
-        result_message_cls=MyResultMessage,
-    ),
-)
-print(result.custom_score)
-```
-
 ## API Reference
 
 ### Types

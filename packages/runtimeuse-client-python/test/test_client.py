@@ -48,27 +48,6 @@ class TestResultMessage:
         assert result.structured_output == {"success": True}
 
     @pytest.mark.asyncio
-    async def test_custom_result_class(self, fake_transport, make_query_options):
-        class CustomResult(ResultMessageInterface):
-            custom_field: str = "default"
-
-        result_msg = {
-            "message_type": "result_message",
-            "structured_output": {"ok": 1},
-            "metadata": None,
-            "custom_field": "hello",
-        }
-        transport, client = fake_transport([result_msg])
-
-        result = await client.query(
-            prompt=DEFAULT_PROMPT,
-            options=make_query_options(result_message_cls=CustomResult),
-        )
-
-        assert isinstance(result, CustomResult)
-        assert result.custom_field == "hello"
-
-    @pytest.mark.asyncio
     async def test_no_result_raises(self, fake_transport, query_options):
         transport, client = fake_transport([])
 

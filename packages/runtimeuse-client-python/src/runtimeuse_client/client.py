@@ -9,11 +9,11 @@ from .types import (
     AgentRuntimeMessageInterface,
     CancelMessage,
     ErrorMessageInterface,
+    ResultMessageInterface,
     AssistantMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResponseMessageInterface,
     QueryOptions,
-    T,
 )
 from .exceptions import AgentRuntimeError, CancelledException
 
@@ -59,8 +59,8 @@ class RuntimeUseClient:
     async def query(
         self,
         prompt: str,
-        options: QueryOptions[T],
-    ) -> T:
+        options: QueryOptions,
+    ) -> ResultMessageInterface:
         """Send a prompt to the agent runtime and return the result.
 
         Builds an :class:`InvocationMessage` from *prompt* and *options*,
@@ -98,8 +98,7 @@ class RuntimeUseClient:
         send_queue: asyncio.Queue[dict] = asyncio.Queue()
         await send_queue.put(invocation.model_dump(mode="json"))
 
-        result_message_cls = options.result_message_cls
-        result: T | None = None
+        result: ResultMessageInterface | None = None
 
         async with asyncio.timeout(options.timeout):
             async for message in self._transport(send_queue=send_queue):
@@ -124,7 +123,7 @@ class RuntimeUseClient:
                     continue
 
                 if message_interface.message_type == "result_message":
-                    result = result_message_cls.model_validate(message)
+                    result = ResultMessageInterface.model_validate(message)
                     logger.info(
                         f"Received result message from agent runtime: {message}"
                     )
