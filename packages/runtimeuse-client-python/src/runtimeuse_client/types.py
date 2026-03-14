@@ -56,6 +56,13 @@ class StructuredOutputResult(BaseModel):
     structured_output: dict[str, Any]
 
 
+class QueryResult(BaseModel):
+    """Result returned by :meth:`RuntimeUseClient.query`."""
+
+    metadata: dict[str, Any] | None = None
+    data: TextResult | StructuredOutputResult = Field(discriminator="type")
+
+
 class ResultMessageInterface(AgentRuntimeMessageInterface):
     """Wire-format result message from the agent runtime."""
 

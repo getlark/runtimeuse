@@ -7,7 +7,7 @@ from test.conftest import DEFAULT_PROMPT
 from src.runtimeuse_client import (
     RuntimeUseClient,
     QueryOptions,
-    ResultMessageInterface,
+    QueryResult,
     TextResult,
     StructuredOutputResult,
     AssistantMessageInterface,
@@ -53,7 +53,7 @@ class TestResultMessage:
             ),
         )
 
-        assert isinstance(result, ResultMessageInterface)
+        assert isinstance(result, QueryResult)
         assert isinstance(result.data, StructuredOutputResult)
         assert result.data.structured_output == {"success": True}
         assert result.metadata == {"duration_ms": 50}

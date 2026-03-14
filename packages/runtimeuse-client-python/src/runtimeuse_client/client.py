@@ -10,6 +10,7 @@ from .types import (
     CancelMessage,
     ErrorMessageInterface,
     ResultMessageInterface,
+    QueryResult,
     AssistantMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResponseMessageInterface,
@@ -60,12 +61,12 @@ class RuntimeUseClient:
         self,
         prompt: str,
         options: QueryOptions,
-    ) -> ResultMessageInterface:
+    ) -> QueryResult:
         """Send a prompt to the agent runtime and return the result.
 
         Builds an :class:`InvocationMessage` from *prompt* and *options*,
         sends it over the transport, processes the response stream, and
-        returns the :class:`ResultMessageInterface`.
+        returns a :class:`QueryResult`.
 
         Access ``result.data`` for the :class:`TextResult` or
         :class:`StructuredOutputResult`, and ``result.metadata`` for
@@ -196,4 +197,4 @@ class RuntimeUseClient:
         if wire_result is None:
             raise AgentRuntimeError("No result message received")
 
-        return wire_result
+        return QueryResult(data=wire_result.data, metadata=wire_result.metadata)

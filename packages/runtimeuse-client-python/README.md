@@ -63,9 +63,9 @@ client = RuntimeUseClient(ws_url="ws://localhost:8080")
 
 ### RuntimeUseClient
 
-Manages the WebSocket connection to the agent runtime and runs the message loop: sends a prompt, iterates the response stream, and returns a `ResultMessageInterface`. Raises `AgentRuntimeError` if the runtime returns an error.
+Manages the WebSocket connection to the agent runtime and runs the message loop: sends a prompt, iterates the response stream, and returns a `QueryResult`. Raises `AgentRuntimeError` if the runtime returns an error.
 
-`query()` returns a `ResultMessageInterface` with `.result` (a `TextResult` or `StructuredOutputResult`) and `.metadata`.
+`query()` returns a `QueryResult` with `.data` (a `TextResult` or `StructuredOutputResult`) and `.metadata`.
 
 ```python
 client = RuntimeUseClient(ws_url="ws://localhost:8080")
@@ -134,7 +134,8 @@ except CancelledException:
 | Class                                     | Description                                            |
 | ----------------------------------------- | ------------------------------------------------------ |
 | `QueryOptions`                            | Configuration for `client.query()` (prompt options, callbacks, timeout) |
-| `ResultMessageInterface`                  | Wire-format result from `query()` (`.data`, `.metadata`) |
+| `QueryResult`                             | Return type of `query()` (`.data`, `.metadata`)        |
+| `ResultMessageInterface`                  | Wire-format result message from the runtime            |
 | `TextResult`                              | Result variant when no output schema is specified (`.text`) |
 | `StructuredOutputResult`                  | Result variant when an output schema is specified (`.structured_output`) |
 
