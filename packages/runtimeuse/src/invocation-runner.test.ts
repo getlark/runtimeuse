@@ -95,9 +95,10 @@ describe("InvocationRunner", () => {
     mockDownload.mockResolvedValue(undefined);
     mockExecute.mockResolvedValue({ exitCode: 0 });
     mockHandlerRun.mockResolvedValue({
+      type: "structured_output",
       structuredOutput: { ok: true },
       metadata: { duration_ms: 12 },
-    });
+    } as AgentResult);
   });
 
   it("calls handler with parsed output format and defaults env to empty object", async () => {
@@ -142,7 +143,7 @@ describe("InvocationRunner", () => {
     });
     mockHandlerRun.mockImplementation(async () => {
       events.push("handler");
-      return { structuredOutput: { ok: true } };
+      return { type: "structured_output", structuredOutput: { ok: true } } as AgentResult;
     });
 
     const { runner, message } = createRunner({
@@ -214,7 +215,7 @@ describe("InvocationRunner", () => {
     mockHandlerRun.mockImplementation(async (_, sender) => {
       sender.sendAssistantMessage(["thinking"]);
       sender.sendErrorMessage("warn", { hint: "retry" });
-      return { structuredOutput: { ok: true } };
+      return { type: "structured_output", structuredOutput: { ok: true } } as AgentResult;
     });
     const { runner, message, send } = createRunner();
 
@@ -232,7 +233,10 @@ describe("InvocationRunner", () => {
   });
 
   it("defaults result metadata to empty object when handler omits it", async () => {
-    mockHandlerRun.mockResolvedValueOnce({ structuredOutput: { ok: true } });
+    mockHandlerRun.mockResolvedValueOnce({
+      type: "structured_output",
+      structuredOutput: { ok: true },
+    } as AgentResult);
     const { runner, message, send } = createRunner();
 
     await runner.run(message);
@@ -242,6 +246,48 @@ describe("InvocationRunner", () => {
       metadata: {},
       structured_output: { ok: true },
     });
+  });
+
+  it("sends text result when handler returns text", async () => {
+    mockHandlerRun.mockResolvedValueOnce({
+      type: "text",
+      text: "Hello, world!",
+      metadata: { model: "test" },
+    } as AgentResult);
+    const { runner, send } = createRunner({
+      output_format_json_schema_str: undefined,
+    });
+
+    await runner.run({
+      ...BASE_INVOCATION_MESSAGE,
+      output_format_json_schema_str: undefined,
+    });
+
+    expect(send).toHaveBeenCalledWith({
+      message_type: "result_message",
+      metadata: { model: "test" },
+      text: "Hello, world!",
+    });
+  });
+
+  it("passes undefined outputFormat when schema is omitted", async () => {
+    mockHandlerRun.mockResolvedValueOnce({
+      type: "text",
+      text: "response",
+    } as AgentResult);
+    const { runner } = createRunner();
+
+    await runner.run({
+      ...BASE_INVOCATION_MESSAGE,
+      output_format_json_schema_str: undefined,
+    });
+
+    expect(mockHandlerRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outputFormat: undefined,
+      }),
+      expect.any(Object),
+    );
   });
 
   it("builds command handlers for each configured command", async () => {

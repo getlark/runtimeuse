@@ -16,7 +16,7 @@ Start the runtime inside any sandbox, then connect from outside:
 
 ```python
 import asyncio
-from runtimeuse import RuntimeUseClient, QueryOptions
+from runtimeuse import RuntimeUseClient, QueryOptions, TextResult, StructuredOutputResult
 
 async def main():
     # Start the runtime in a sandbox (provider-specific)
@@ -24,21 +24,30 @@ async def main():
     sandbox.run("npx -y runtimeuse")
     ws_url = sandbox.get_url(8080)
 
-    # Connect and query
     client = RuntimeUseClient(ws_url=ws_url)
 
+    # Text response (no output schema)
     result = await client.query(
-        prompt="Do the thing and return the result.",
+        prompt="What is the capital of France?",
+        options=QueryOptions(
+            system_prompt="You are a helpful assistant.",
+            model="gpt-4.1",
+        ),
+    )
+    assert isinstance(result, TextResult)
+    print(result.text)
+
+    # Structured response (with output schema)
+    result = await client.query(
+        prompt="Return the capital of France.",
         options=QueryOptions(
             system_prompt="You are a helpful assistant.",
             model="gpt-4.1",
             output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}',
-            source_id="my-run-001",
-            secrets_to_redact=["sk-secret-key"],
         ),
     )
-    print(f"Success: {result.structured_output.get('success')}")
-    print(f"Output: {result.structured_output}")
+    assert isinstance(result, StructuredOutputResult)
+    print(result.structured_output)
 
 asyncio.run(main())
 ```
@@ -55,6 +64,8 @@ client = RuntimeUseClient(ws_url="ws://localhost:8080")
 
 Manages the WebSocket connection to the agent runtime and runs the message loop: sends a prompt, iterates the response stream, and returns the result. Raises `AgentRuntimeError` if the runtime returns an error.
 
+`query()` returns a `QueryResult` -- either a `TextResult` or `StructuredOutputResult` depending on whether `output_format_json_schema_str` is provided.
+
 ```python
 client = RuntimeUseClient(ws_url="ws://localhost:8080")
 
@@ -63,12 +74,17 @@ result = await client.query(
     options=QueryOptions(
         system_prompt="You are a helpful assistant.",
         model="gpt-4.1",
-        output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}',
-        on_assistant_message=on_assistant,       # optional
-        on_artifact_upload_request=on_artifact,  # optional -- return ArtifactUploadResult
-        timeout=300,                             # optional -- seconds
+        output_format_json_schema_str='...',         # optional -- omit for text response
+        on_assistant_message=on_assistant,            # optional
+        on_artifact_upload_request=on_artifact,       # optional -- return ArtifactUploadResult
+        timeout=300,                                  # optional -- seconds
     ),
 )
+
+if isinstance(result, TextResult):
+    print(result.text)
+elif isinstance(result, StructuredOutputResult):
+    print(result.structured_output)
 ```
 
 ### Artifact Upload Handshake
@@ -102,7 +118,6 @@ try:
         options=QueryOptions(
             system_prompt="You are a helpful assistant.",
             model="gpt-4.1",
-            output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}',
         ),
     )
 except CancelledException:
@@ -116,7 +131,9 @@ except CancelledException:
 | Class                                     | Description                                            |
 | ----------------------------------------- | ------------------------------------------------------ |
 | `QueryOptions`                            | Configuration for `client.query()` (prompt options, callbacks, timeout) |
-| `ResultMessageInterface`                  | Structured result from the agent                       |
+| `TextResult`                              | Result when no output schema is specified (`.text`)    |
+| `StructuredOutputResult`                  | Result when an output schema is specified (`.structured_output`) |
+| `QueryResult`                             | Union type: `TextResult \| StructuredOutputResult`     |
 | `AssistantMessageInterface`               | Intermediate assistant text messages                   |
 | `ArtifactUploadRequestMessageInterface`   | Runtime requesting a presigned URL for artifact upload |
 | `ArtifactUploadResponseMessageInterface`  | Response with presigned URL sent back to runtime       |

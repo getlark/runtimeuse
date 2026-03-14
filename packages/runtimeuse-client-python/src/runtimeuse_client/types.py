@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Awaitable, Callable, Literal, Union
 
 from pydantic import BaseModel
 from pydantic.fields import Field
@@ -33,7 +33,7 @@ class InvocationMessage(BaseModel):
     source_id: str | None = None
     system_prompt: str
     user_prompt: str
-    output_format_json_schema_str: str
+    output_format_json_schema_str: str | None = None
     secrets_to_redact: list[str] = Field(default_factory=list)
     artifacts_dir: str | None = None
     pre_agent_invocation_commands: list[CommandInterface] | None = None
@@ -43,9 +43,33 @@ class InvocationMessage(BaseModel):
 
 
 class ResultMessageInterface(AgentRuntimeMessageInterface):
+    """Wire-format result message from the agent runtime.
+
+    Exactly one of ``text`` or ``structured_output`` will be present
+    depending on whether an output schema was provided in the invocation.
+    """
+
     message_type: Literal["result_message"]
     metadata: dict[str, Any] | None = None
+    text: str | None = None
+    structured_output: dict[str, Any] | None = None
+
+
+class TextResult(BaseModel):
+    """Result returned when no output schema is specified."""
+
+    text: str
+    metadata: dict[str, Any] | None = None
+
+
+class StructuredOutputResult(BaseModel):
+    """Result returned when an output schema is specified."""
+
     structured_output: dict[str, Any]
+    metadata: dict[str, Any] | None = None
+
+
+QueryResult = Union[TextResult, StructuredOutputResult]
 
 
 class AssistantMessageInterface(AgentRuntimeMessageInterface):
@@ -87,6 +111,7 @@ OnArtifactUploadRequestCallback = Callable[
     [ArtifactUploadRequestMessageInterface], Awaitable[ArtifactUploadResult]
 ]
 
+
 @dataclass
 class QueryOptions:
     """Options for :meth:`RuntimeUseClient.query`.
@@ -97,7 +122,7 @@ class QueryOptions:
 
     system_prompt: str
     model: str
-    output_format_json_schema_str: str
+    output_format_json_schema_str: str | None = None
 
     source_id: str | None = None
     secrets_to_redact: list[str] = field(default_factory=list)

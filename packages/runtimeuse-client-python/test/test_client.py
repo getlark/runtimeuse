@@ -7,19 +7,25 @@ from test.conftest import DEFAULT_PROMPT
 from src.runtimeuse_client import (
     RuntimeUseClient,
     QueryOptions,
-    ResultMessageInterface,
+    TextResult,
+    StructuredOutputResult,
     AssistantMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResult,
-    ErrorMessageInterface,
     AgentRuntimeError,
     CancelledException,
 )
 
 
-RESULT_MSG = {
+STRUCTURED_RESULT_MSG = {
     "message_type": "result_message",
     "structured_output": {"ok": True},
+    "metadata": None,
+}
+
+TEXT_RESULT_MSG = {
+    "message_type": "result_message",
+    "text": "Hello, world!",
     "metadata": None,
 }
 
@@ -31,10 +37,30 @@ RESULT_MSG = {
 
 class TestResultMessage:
     @pytest.mark.asyncio
-    async def test_result_message_returned(self, fake_transport, query_options):
+    async def test_structured_output_result(self, fake_transport, make_query_options):
         result_msg = {
             "message_type": "result_message",
             "structured_output": {"success": True},
+            "metadata": {"duration_ms": 50},
+        }
+        transport, client = fake_transport([result_msg])
+
+        result = await client.query(
+            prompt=DEFAULT_PROMPT,
+            options=make_query_options(
+                output_format_json_schema_str='{"type":"object"}',
+            ),
+        )
+
+        assert isinstance(result, StructuredOutputResult)
+        assert result.structured_output == {"success": True}
+        assert result.metadata == {"duration_ms": 50}
+
+    @pytest.mark.asyncio
+    async def test_text_result(self, fake_transport, query_options):
+        result_msg = {
+            "message_type": "result_message",
+            "text": "The answer is 42.",
             "metadata": None,
         }
         transport, client = fake_transport([result_msg])
@@ -44,14 +70,30 @@ class TestResultMessage:
             options=query_options,
         )
 
-        assert isinstance(result, ResultMessageInterface)
-        assert result.structured_output == {"success": True}
+        assert isinstance(result, TextResult)
+        assert result.text == "The answer is 42."
 
     @pytest.mark.asyncio
     async def test_no_result_raises(self, fake_transport, query_options):
         transport, client = fake_transport([])
 
         with pytest.raises(AgentRuntimeError, match="No result message received"):
+            await client.query(
+                prompt=DEFAULT_PROMPT,
+                options=query_options,
+            )
+
+    @pytest.mark.asyncio
+    async def test_empty_result_raises(self, fake_transport, query_options):
+        result_msg = {
+            "message_type": "result_message",
+        }
+        transport, client = fake_transport([result_msg])
+
+        with pytest.raises(
+            AgentRuntimeError,
+            match="neither text nor structured_output",
+        ):
             await client.query(
                 prompt=DEFAULT_PROMPT,
                 options=query_options,
@@ -72,7 +114,7 @@ class TestAssistantMessage:
             "message_type": "assistant_message",
             "text_blocks": ["Hello", "World"],
         }
-        transport, client = fake_transport([assistant_msg, RESULT_MSG])
+        transport, client = fake_transport([assistant_msg, TEXT_RESULT_MSG])
         on_assistant = AsyncMock()
 
         await client.query(
@@ -93,7 +135,7 @@ class TestAssistantMessage:
             "message_type": "assistant_message",
             "text_blocks": ["ignored"],
         }
-        transport, client = fake_transport([assistant_msg, RESULT_MSG])
+        transport, client = fake_transport([assistant_msg, TEXT_RESULT_MSG])
 
         await client.query(
             prompt=DEFAULT_PROMPT,
@@ -156,12 +198,7 @@ class TestArtifactUpload:
             "filename": "screenshot.png",
             "filepath": "/tmp/screenshot.png",
         }
-        result_msg = {
-            "message_type": "result_message",
-            "structured_output": {"done": True},
-            "metadata": None,
-        }
-        transport, client = fake_transport([upload_request, result_msg])
+        transport, client = fake_transport([upload_request, TEXT_RESULT_MSG])
 
         async def on_artifact(
             req: ArtifactUploadRequestMessageInterface,
@@ -198,7 +235,7 @@ class TestArtifactUpload:
             "filename": "file.txt",
             "filepath": "/tmp/file.txt",
         }
-        transport, client = fake_transport([upload_request, RESULT_MSG])
+        transport, client = fake_transport([upload_request, TEXT_RESULT_MSG])
 
         await client.query(
             prompt=DEFAULT_PROMPT,
@@ -234,20 +271,15 @@ class TestCancellation:
 
     @pytest.mark.asyncio
     async def test_no_cancellation_without_abort(self, fake_transport, query_options):
-        result_msg = {
-            "message_type": "result_message",
-            "structured_output": {"ok": True},
-            "metadata": None,
-        }
-
-        transport, client = fake_transport([result_msg])
+        transport, client = fake_transport([TEXT_RESULT_MSG])
 
         result = await client.query(
             prompt=DEFAULT_PROMPT,
             options=query_options,
         )
 
-        assert result.structured_output == {"ok": True}
+        assert isinstance(result, TextResult)
+        assert result.text == "Hello, world!"
 
 
 # ---------------------------------------------------------------------------
@@ -282,28 +314,28 @@ class TestUnknownMessages:
     @pytest.mark.asyncio
     async def test_unknown_message_type_skipped(self, fake_transport, query_options):
         unknown_msg = {"message_type": "unknown_type", "data": 123}
-        transport, client = fake_transport([unknown_msg, RESULT_MSG])
+        transport, client = fake_transport([unknown_msg, TEXT_RESULT_MSG])
 
         result = await client.query(
             prompt=DEFAULT_PROMPT,
             options=query_options,
         )
 
-        assert result.structured_output == {"ok": True}
+        assert isinstance(result, TextResult)
 
     @pytest.mark.asyncio
     async def test_completely_malformed_message_skipped(
         self, fake_transport, query_options
     ):
         bad_msg = {"no_message_type_key": True}
-        transport, client = fake_transport([bad_msg, RESULT_MSG])
+        transport, client = fake_transport([bad_msg, TEXT_RESULT_MSG])
 
         result = await client.query(
             prompt=DEFAULT_PROMPT,
             options=query_options,
         )
 
-        assert result.structured_output == {"ok": True}
+        assert isinstance(result, TextResult)
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +371,7 @@ class TestMultipleMessages:
         )
 
         assert on_assistant.await_count == 2
+        assert isinstance(result, StructuredOutputResult)
         assert result.structured_output == {"answer": 42}
 
 
@@ -350,7 +383,7 @@ class TestMultipleMessages:
 class TestInvocationSent:
     @pytest.mark.asyncio
     async def test_invocation_message_queued(self, fake_transport, make_query_options):
-        transport, client = fake_transport([RESULT_MSG])
+        transport, client = fake_transport([TEXT_RESULT_MSG])
 
         await client.query(
             prompt="Do something.",
@@ -363,6 +396,36 @@ class TestInvocationSent:
         assert len(invocation_msgs) == 1
         assert invocation_msgs[0]["source_id"] == "capture-test"
         assert invocation_msgs[0]["user_prompt"] == "Do something."
+
+    @pytest.mark.asyncio
+    async def test_schema_forwarded_when_set(self, fake_transport, make_query_options):
+        transport, client = fake_transport([STRUCTURED_RESULT_MSG])
+
+        await client.query(
+            prompt=DEFAULT_PROMPT,
+            options=make_query_options(
+                output_format_json_schema_str='{"type":"object"}',
+            ),
+        )
+
+        invocation_msgs = [
+            m for m in transport.sent if m.get("message_type") == "invocation_message"
+        ]
+        assert invocation_msgs[0]["output_format_json_schema_str"] == '{"type":"object"}'
+
+    @pytest.mark.asyncio
+    async def test_schema_none_when_omitted(self, fake_transport, query_options):
+        transport, client = fake_transport([TEXT_RESULT_MSG])
+
+        await client.query(
+            prompt=DEFAULT_PROMPT,
+            options=query_options,
+        )
+
+        invocation_msgs = [
+            m for m in transport.sent if m.get("message_type") == "invocation_message"
+        ]
+        assert invocation_msgs[0]["output_format_json_schema_str"] is None
 
 
 # ---------------------------------------------------------------------------

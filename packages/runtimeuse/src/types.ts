@@ -15,7 +15,7 @@ interface InvocationMessage {
   system_prompt: string;
   user_prompt: string;
   secrets_to_redact: string[];
-  output_format_json_schema_str: string;
+  output_format_json_schema_str?: string;
   model: string;
   artifacts_dir?: string;
   pre_agent_invocation_commands?: Command[];
@@ -30,7 +30,8 @@ interface CancelMessage {
 interface ResultMessage {
   message_type: "result_message";
   metadata?: Record<string, unknown>;
-  structured_output: Record<string, unknown>;
+  text?: string;
+  structured_output?: Record<string, unknown>;
   [key: string]: unknown;
 }
 

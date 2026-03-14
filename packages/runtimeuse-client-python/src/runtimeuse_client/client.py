@@ -10,6 +10,9 @@ from .types import (
     CancelMessage,
     ErrorMessageInterface,
     ResultMessageInterface,
+    TextResult,
+    StructuredOutputResult,
+    QueryResult,
     AssistantMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResponseMessageInterface,
@@ -60,17 +63,21 @@ class RuntimeUseClient:
         self,
         prompt: str,
         options: QueryOptions,
-    ) -> ResultMessageInterface:
+    ) -> QueryResult:
         """Send a prompt to the agent runtime and return the result.
 
         Builds an :class:`InvocationMessage` from *prompt* and *options*,
         sends it over the transport, processes the response stream, and
-        returns the validated result message.
+        returns the result.
+
+        When ``options.output_format_json_schema_str`` is provided the
+        runtime returns a :class:`StructuredOutputResult`.  Otherwise it
+        returns a :class:`TextResult`.
 
         Args:
             prompt: The user prompt to send to the agent.
             options: Query configuration including system prompt, model,
-                output schema, callbacks, timeout, and result type.
+                output schema, callbacks, and timeout.
 
         Raises:
             AgentRuntimeError: If the runtime sends an error or no result is produced.
@@ -98,7 +105,7 @@ class RuntimeUseClient:
         send_queue: asyncio.Queue[dict] = asyncio.Queue()
         await send_queue.put(invocation.model_dump(mode="json"))
 
-        result: ResultMessageInterface | None = None
+        wire_result: ResultMessageInterface | None = None
 
         async with asyncio.timeout(options.timeout):
             async for message in self._transport(send_queue=send_queue):
@@ -123,7 +130,7 @@ class RuntimeUseClient:
                     continue
 
                 if message_interface.message_type == "result_message":
-                    result = ResultMessageInterface.model_validate(message)
+                    wire_result = ResultMessageInterface.model_validate(message)
                     logger.info(
                         f"Received result message from agent runtime: {message}"
                     )
@@ -189,7 +196,20 @@ class RuntimeUseClient:
                         f"Received non-result message from agent runtime: {message}"
                     )
 
-        if result is None:
+        if wire_result is None:
             raise AgentRuntimeError("No result message received")
 
-        return result
+        if wire_result.structured_output is not None:
+            return StructuredOutputResult(
+                structured_output=wire_result.structured_output,
+                metadata=wire_result.metadata,
+            )
+        if wire_result.text is not None:
+            return TextResult(
+                text=wire_result.text,
+                metadata=wire_result.metadata,
+            )
+
+        raise AgentRuntimeError(
+            "Result message has neither text nor structured_output"
+        )

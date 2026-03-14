@@ -19,16 +19,19 @@ export const openaiHandler: AgentHandler = {
     invocation: AgentInvocation,
     sender: MessageSender,
   ): Promise<AgentResult> {
-    const strictSchema = ensureStrictSchema(invocation.outputFormat.schema);
-    const outputType = zod.fromJSONSchema(strictSchema) as AgentOutputType;
-
-    const agent = new Agent({
+    const agentConfig: ConstructorParameters<typeof Agent>[0] = {
       name: "runtimeuse-agent",
       instructions: invocation.systemPrompt,
-      outputType,
       model: invocation.model,
       tools: [codeInterpreterTool(), webSearchTool()],
-    });
+    };
+
+    if (invocation.outputFormat) {
+      const strictSchema = ensureStrictSchema(invocation.outputFormat.schema);
+      agentConfig.outputType = zod.fromJSONSchema(strictSchema) as AgentOutputType;
+    }
+
+    const agent = new Agent(agentConfig);
 
     const result = await runAgent(agent, invocation.userPrompt, {
       signal: invocation.signal,
@@ -60,19 +63,6 @@ export const openaiHandler: AgentHandler = {
       sender.sendAssistantMessage([currentText]);
     }
 
-    let structuredOutput: Record<string, unknown> = {};
-    const finalOutput = result.finalOutput;
-
-    if (typeof finalOutput === "string") {
-      try {
-        structuredOutput = JSON.parse(finalOutput);
-      } catch {
-        structuredOutput = { result: finalOutput };
-      }
-    } else if (finalOutput != null && typeof finalOutput === "object") {
-      structuredOutput = finalOutput as Record<string, unknown>;
-    }
-
     const metadata: Record<string, unknown> = {};
     const usage = result.state?.usage;
     if (usage) {
@@ -83,7 +73,35 @@ export const openaiHandler: AgentHandler = {
       };
     }
 
-    return { structuredOutput, metadata };
+    const finalOutput = result.finalOutput;
+
+    if (!invocation.outputFormat) {
+      if (typeof finalOutput !== "string") {
+        throw new Error(
+          `Expected string result but got ${typeof finalOutput}`,
+        );
+      }
+      return { type: "text", text: finalOutput, metadata };
+    }
+
+    let structuredOutput: Record<string, unknown>;
+    if (typeof finalOutput === "string") {
+      try {
+        structuredOutput = JSON.parse(finalOutput);
+      } catch {
+        throw new Error(
+          "Expected structured output but got non-JSON string",
+        );
+      }
+    } else if (finalOutput != null && typeof finalOutput === "object") {
+      structuredOutput = finalOutput as Record<string, unknown>;
+    } else {
+      throw new Error(
+        `Expected structured output but got ${typeof finalOutput}`,
+      );
+    }
+
+    return { type: "structured_output", structuredOutput, metadata };
   },
 };
 

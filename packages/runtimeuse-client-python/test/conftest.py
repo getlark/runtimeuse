@@ -44,7 +44,6 @@ DEFAULT_PROMPT = "Do something."
 def _make_query_options(**overrides: Any) -> QueryOptions:
     defaults = dict(
         system_prompt="You are a good assistant.",
-        output_format_json_schema_str='{"type":"object"}',
         model="gpt-4o",
     )
     defaults.update(overrides)

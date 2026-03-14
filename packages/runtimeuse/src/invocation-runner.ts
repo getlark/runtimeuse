@@ -27,10 +27,12 @@ export class InvocationRunner {
     await this.runCommands(message.pre_agent_invocation_commands, "pre-agent");
 
     const sender = this.createSender();
-    const outputFormat = JSON.parse(message.output_format_json_schema_str) as {
-      type: "json_schema";
-      schema: Record<string, unknown>;
-    };
+    const outputFormat = message.output_format_json_schema_str
+      ? (JSON.parse(message.output_format_json_schema_str) as {
+          type: "json_schema";
+          schema: Record<string, unknown>;
+        })
+      : undefined;
 
     const agentResult = await handler.run(
       {
@@ -45,20 +47,21 @@ export class InvocationRunner {
       sender,
     );
 
-    logger.log(
-      "Sending result message:",
-      JSON.stringify({
-        message_type: "result_message",
-        metadata: agentResult.metadata ?? {},
-        structured_output: agentResult.structuredOutput,
-      }),
-    );
+    const resultMessage: OutgoingMessage =
+      agentResult.type === "text"
+        ? {
+            message_type: "result_message",
+            metadata: agentResult.metadata ?? {},
+            text: agentResult.text,
+          }
+        : {
+            message_type: "result_message",
+            metadata: agentResult.metadata ?? {},
+            structured_output: agentResult.structuredOutput,
+          };
 
-    send({
-      message_type: "result_message",
-      metadata: agentResult.metadata ?? {},
-      structured_output: agentResult.structuredOutput,
-    });
+    logger.log("Sending result message:", JSON.stringify(resultMessage));
+    send(resultMessage);
 
     await this.runCommands(
       message.post_agent_invocation_commands,
