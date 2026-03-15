@@ -44,7 +44,7 @@ export class RuntimeUseServer {
     });
   }
 
-  async start(): Promise<void> {
+  async startListening(): Promise<void> {
     return new Promise((resolve) => {
       this.wss.on("listening", () => {
         this.logger.log(
