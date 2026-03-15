@@ -5,13 +5,11 @@ on:
     branches: [main]
     paths:
       - "packages/runtimeuse-client-python/**"
+      - "packages/runtimeuse/**"
   pull_request:
     paths:
       - "packages/runtimeuse-client-python/**"
-
-defaults:
-  run:
-    working-directory: packages/runtimeuse-client-python
+      - "packages/runtimeuse/**"
 
 jobs:
   test:
@@ -21,9 +19,18 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm install
+        working-directory: packages/runtimeuse
+      - run: npm run build
+        working-directory: packages/runtimeuse
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]" 2>/dev/null || pip install -e .
+        working-directory: packages/runtimeuse-client-python
       - run: pip install pytest pytest-asyncio
       - run: pytest test/
+        working-directory: packages/runtimeuse-client-python
