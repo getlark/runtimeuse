@@ -35,6 +35,8 @@
     "build": "tsc",
     "prepublishOnly": "npm run build",
     "test": "vitest run",
+    "pretest:integration": "npm run build",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc --noEmit",
     "dev-publish": "bash scripts/dev-publish.sh"
   },
