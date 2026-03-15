@@ -7,7 +7,7 @@ Handles the WebSocket connection lifecycle, message dispatch, artifact upload ha
 ## Installation
 
 ```bash
-pip install runtimeuse
+pip install runtimeuse-client
 ```
 
 ## Quick Start
@@ -16,7 +16,7 @@ Start the runtime inside any sandbox, then connect from outside:
 
 ```python
 import asyncio
-from runtimeuse import RuntimeUseClient, QueryOptions, TextResult, StructuredOutputResult
+from runtimeuse_client import RuntimeUseClient, QueryOptions, TextResult, StructuredOutputResult
 
 async def main():
     # Start the runtime in a sandbox (provider-specific)
@@ -95,7 +95,7 @@ print(result.metadata)  # execution metadata
 When the agent runtime requests an artifact upload, provide a callback that returns a presigned URL and content type. The client sends the response back automatically.
 
 ```python
-from runtimeuse import ArtifactUploadResult
+from runtimeuse_client import ArtifactUploadResult
 
 async def on_artifact(request: ArtifactUploadRequestMessageInterface) -> ArtifactUploadResult:
     presigned_url = await my_storage.create_presigned_url(request.filename)
@@ -108,7 +108,7 @@ async def on_artifact(request: ArtifactUploadRequestMessageInterface) -> Artifac
 Call `client.abort()` from any coroutine to cancel a running query. The client sends a cancel message to the runtime and `query` raises `CancelledException`.
 
 ```python
-from runtimeuse import CancelledException
+from runtimeuse_client import CancelledException
 
 async def cancel_after_delay(client, seconds):
     await asyncio.sleep(seconds)
