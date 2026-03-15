@@ -29,3 +29,9 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/runtimeuse_client"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "e2e: end-to-end tests requiring a running runtimeuse server",
+]
