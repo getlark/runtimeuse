@@ -45,9 +45,11 @@ function createHandler(
   abortController = new AbortController(),
   onStdout?: (stdout: string) => void,
   onStderr?: (stderr: string) => void,
+  secrets: string[] = [],
 ) {
   return new CommandHandler({
     command,
+    secrets,
     logger: mockLogger,
     abortController,
     onStdout,
@@ -116,11 +118,10 @@ describe("CommandHandler", () => {
   });
 
   describe("command execution", () => {
-    it("calls exec with the right command, cwd, and env", () => {
+    it("calls exec with the right command and cwd", () => {
       const handler = createHandler({
         command: "ls",
         cwd: "/work",
-        env: { FOO: "bar" },
       });
 
       handler.execute();
@@ -129,7 +130,6 @@ describe("CommandHandler", () => {
         "ls",
         expect.objectContaining({
           cwd: "/work",
-          env: expect.objectContaining({ FOO: "bar" }),
         }),
         expect.any(Function),
       );
@@ -286,12 +286,11 @@ describe("CommandHandler", () => {
     it("redacts secrets from stdout", async () => {
       const onStdout = vi.fn();
       const handler = createHandler(
-        {
-          command: "echo",
-          env: { API_KEY: "s3cret" },
-        },
+        { command: "echo" },
         new AbortController(),
         onStdout,
+        undefined,
+        ["s3cret"],
       );
 
       const promise = handler.execute();
@@ -314,10 +313,11 @@ describe("CommandHandler", () => {
     it("redacts secrets from stderr", async () => {
       const onStderr = vi.fn();
       const handler = createHandler(
-        { command: "warn", env: { PASSWORD: "hunter2" } },
+        { command: "warn" },
         new AbortController(),
         undefined,
         onStderr,
+        ["hunter2"],
       );
 
       const promise = handler.execute();
@@ -337,12 +337,14 @@ describe("CommandHandler", () => {
       expect(onStderr).toHaveBeenCalledWith("error: [REDACTED] leaked");
     });
 
-    it("redacts multiple env secrets from output", async () => {
+    it("redacts multiple secrets from output", async () => {
       const onStdout = vi.fn();
       const handler = createHandler(
-        { command: "echo", env: { KEY: "aaa", TOKEN: "bbb" } },
+        { command: "echo" },
         new AbortController(),
         onStdout,
+        undefined,
+        ["aaa", "bbb"],
       );
 
       const promise = handler.execute();
@@ -365,7 +367,8 @@ describe("CommandHandler", () => {
     it("passes redacted data to onStdout callback", async () => {
       const onStdout = vi.fn();
       const handler = new CommandHandler({
-        command: { command: "echo", env: { SECRET: "xyz" } },
+        command: { command: "echo" },
+        secrets: ["xyz"],
         logger: mockLogger,
         abortController: new AbortController(),
         onStdout: onStdout,
@@ -388,7 +391,7 @@ describe("CommandHandler", () => {
       expect(onStdout).toHaveBeenCalledWith("value=[REDACTED]");
     });
 
-    it("does not redact when command has no env", async () => {
+    it("does not redact when no secrets provided", async () => {
       const onStdout = vi.fn();
       const handler = createHandler(
         { command: "echo" },

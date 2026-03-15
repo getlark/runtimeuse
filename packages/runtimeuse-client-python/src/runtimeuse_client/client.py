@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import Callable, Awaitable, Type, TypeVar
 
 import pydantic
 
@@ -11,19 +10,15 @@ from .types import (
     CancelMessage,
     ErrorMessageInterface,
     ResultMessageInterface,
+    QueryResult,
     AssistantMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResponseMessageInterface,
-    OnAssistantMessageCallback,
-    OnArtifactUploadRequestCallback,
-    OnErrorMessageCallback,
-    IsCancelledCallback,
+    QueryOptions,
 )
-from .exceptions import CancelledException
+from .exceptions import AgentRuntimeError, CancelledException
 
 _default_logger = logging.getLogger(__name__)
-
-T = TypeVar("T", bound=ResultMessageInterface)
 
 
 class RuntimeUseClient:
@@ -51,56 +46,76 @@ class RuntimeUseClient:
         else:
             raise ValueError("Either ws_url or transport must be provided")
 
-    async def invoke(
+        self._abort_event = asyncio.Event()
+
+    def abort(self) -> None:
+        """Signal the current query to cancel.
+
+        Sends a cancel message to the agent runtime and causes ``query``
+        to raise :class:`CancelledException`.  Safe to call from any
+        coroutine on the same event loop.
+        """
+        self._abort_event.set()
+
+    async def query(
         self,
-        invocation: InvocationMessage,
-        # this should be response instead?
-        on_result_message: Callable[[T], Awaitable[None]],
-        result_message_cls: Type[T],
-        on_assistant_message: OnAssistantMessageCallback | None = None,
-        on_artifact_upload_request: OnArtifactUploadRequestCallback | None = None,
-        on_error_message: OnErrorMessageCallback | None = None,
-        is_cancelled: IsCancelledCallback | None = None,
-        timeout: float | None = None,
-        logger: logging.Logger | None = None,
-    ) -> None:
-        """Invoke the agent runtime and process the message stream.
+        prompt: str,
+        options: QueryOptions,
+    ) -> QueryResult:
+        """Send a prompt to the agent runtime and return the result.
+
+        Builds an :class:`InvocationMessage` from *prompt* and *options*,
+        sends it over the transport, processes the response stream, and
+        returns a :class:`QueryResult`.
+
+        Access ``result.data`` for the :class:`TextResult` or
+        :class:`StructuredOutputResult`, and ``result.metadata`` for
+        execution metadata.
 
         Args:
-            invocation: The invocation message to send to the agent runtime.
-            on_result_message: Async callback invoked when a result_message is received.
-            result_message_cls: The Pydantic model class to use when validating result
-                messages.
-            on_assistant_message: Optional async callback invoked when an assistant_message
-                is received.
-            on_artifact_upload_request: Optional async callback invoked when an
-                artifact_upload_request_message is received. Should return an
-                ArtifactUploadResult; the client will send the
-                artifact_upload_response_message back to the agent runtime automatically.
-            on_error_message: Optional async callback invoked when an error_message is
-                received.
-            is_cancelled: Optional async callback to check if the invocation should be
-                cancelled. If provided and returns True, raises CancelledException.
-            timeout: Optional timeout in seconds. Raises asyncio.TimeoutError if exceeded.
-            logger: Optional logger instance. Falls back to module-level logger.
+            prompt: The user prompt to send to the agent.
+            options: Query configuration including system prompt, model,
+                output schema, callbacks, and timeout.
+
+        Raises:
+            AgentRuntimeError: If the runtime sends an error or no result is produced.
+            CancelledException: If the query is cancelled via :meth:`abort`.
+            TimeoutError: If the timeout is exceeded.
         """
-        if logger is None:
-            logger = _default_logger
+        logger = options.logger or _default_logger
+
+        self._abort_event = asyncio.Event()
+
+        invocation = InvocationMessage(
+            message_type="invocation_message",
+            user_prompt=prompt,
+            system_prompt=options.system_prompt,
+            model=options.model,
+            output_format_json_schema_str=options.output_format_json_schema_str,
+            source_id=options.source_id,
+            secrets_to_redact=options.secrets_to_redact,
+            artifacts_dir=options.artifacts_dir,
+            pre_agent_invocation_commands=options.pre_agent_invocation_commands,
+            post_agent_invocation_commands=options.post_agent_invocation_commands,
+            pre_agent_downloadables=options.pre_agent_downloadables,
+        )
 
         send_queue: asyncio.Queue[dict] = asyncio.Queue()
         await send_queue.put(invocation.model_dump(mode="json"))
 
-        async with asyncio.timeout(timeout):
+        wire_result: ResultMessageInterface | None = None
+
+        async with asyncio.timeout(options.timeout):
             async for message in self._transport(send_queue=send_queue):
-                if is_cancelled is not None and await is_cancelled():
-                    logger.info("Invocation cancelled by caller")
+                if self._abort_event.is_set():
+                    logger.info("Query cancelled by caller")
                     await send_queue.put(
                         CancelMessage(message_type="cancel_message").model_dump(
                             mode="json"
                         )
                     )
                     await send_queue.join()
-                    raise CancelledException("Invocation was cancelled")
+                    raise CancelledException("Query was cancelled")
 
                 try:
                     message_interface = AgentRuntimeMessageInterface.model_validate(
@@ -113,39 +128,37 @@ class RuntimeUseClient:
                     continue
 
                 if message_interface.message_type == "result_message":
-                    result_message_interface = result_message_cls.model_validate(
-                        message
-                    )
+                    wire_result = ResultMessageInterface.model_validate(message)
                     logger.info(
                         f"Received result message from agent runtime: {message}"
                     )
-                    await on_result_message(result_message_interface)
                     continue
 
                 elif message_interface.message_type == "assistant_message":
-                    if on_assistant_message is not None:
+                    if options.on_assistant_message is not None:
                         assistant_message_interface = (
                             AssistantMessageInterface.model_validate(message)
                         )
-                        await on_assistant_message(assistant_message_interface)
+                        await options.on_assistant_message(assistant_message_interface)
                     continue
 
                 elif message_interface.message_type == "error_message":
-                    if on_error_message is not None:
-                        try:
-                            error_message_interface = (
-                                ErrorMessageInterface.model_validate(message)
-                            )
-                            logger.error(
-                                f"Error from agent runtime: {error_message_interface}",
-                            )
-                            await on_error_message(error_message_interface)
-                        except pydantic.ValidationError:
-                            logger.error(
-                                f"Received unknown error message from agent runtime: {message}",
-                            )
-                            continue
-                    continue
+                    try:
+                        error_message_interface = ErrorMessageInterface.model_validate(
+                            message
+                        )
+                    except pydantic.ValidationError:
+                        logger.error(
+                            f"Received malformed error message from agent runtime: {message}",
+                        )
+                        raise AgentRuntimeError(str(message))
+                    logger.error(
+                        f"Error from agent runtime: {error_message_interface}",
+                    )
+                    raise AgentRuntimeError(
+                        error_message_interface.error,
+                        metadata=error_message_interface.metadata,
+                    )
 
                 elif (
                     message_interface.message_type == "artifact_upload_request_message"
@@ -153,13 +166,13 @@ class RuntimeUseClient:
                     logger.info(
                         f"Received artifact upload request message from agent runtime: {message}"
                     )
-                    if on_artifact_upload_request is not None:
+                    if options.on_artifact_upload_request is not None:
                         artifact_upload_request_message_interface = (
                             ArtifactUploadRequestMessageInterface.model_validate(
                                 message
                             )
                         )
-                        upload_result = await on_artifact_upload_request(
+                        upload_result = await options.on_artifact_upload_request(
                             artifact_upload_request_message_interface
                         )
                         artifact_upload_response_message_interface = ArtifactUploadResponseMessageInterface(
@@ -180,3 +193,8 @@ class RuntimeUseClient:
                     logger.info(
                         f"Received non-result message from agent runtime: {message}"
                     )
+
+        if wire_result is None:
+            raise AgentRuntimeError("No result message received")
+
+        return QueryResult(data=wire_result.data, metadata=wire_result.metadata)

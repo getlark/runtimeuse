@@ -24,13 +24,15 @@ export class InvocationRunner {
     const { handler, logger, abortController, send } = this.config;
 
     await this.downloadRuntimeEnvironment(message);
-    await this.runCommands(message.pre_agent_invocation_commands, "pre-agent");
+    await this.runCommands(message.pre_agent_invocation_commands, "pre-agent", message.secrets_to_redact);
 
     const sender = this.createSender();
-    const outputFormat = JSON.parse(message.output_format_json_schema_str) as {
-      type: "json_schema";
-      schema: Record<string, unknown>;
-    };
+    const outputFormat = message.output_format_json_schema_str
+      ? (JSON.parse(message.output_format_json_schema_str) as {
+          type: "json_schema";
+          schema: Record<string, unknown>;
+        })
+      : undefined;
 
     const agentResult = await handler.run(
       {
@@ -45,24 +47,25 @@ export class InvocationRunner {
       sender,
     );
 
-    logger.log(
-      "Sending result message:",
-      JSON.stringify({
-        message_type: "result_message",
-        metadata: agentResult.metadata ?? {},
-        structured_output: agentResult.structuredOutput,
-      }),
-    );
-
-    send({
+    const resultMessage: OutgoingMessage = {
       message_type: "result_message",
       metadata: agentResult.metadata ?? {},
-      structured_output: agentResult.structuredOutput,
-    });
+      data:
+        agentResult.type === "text"
+          ? { type: "text", text: agentResult.text }
+          : {
+              type: "structured_output",
+              structured_output: agentResult.structuredOutput,
+            },
+    };
+
+    logger.log("Sending result message:", JSON.stringify(resultMessage));
+    send(resultMessage);
 
     await this.runCommands(
       message.post_agent_invocation_commands,
       "post-agent",
+      message.secrets_to_redact,
     );
   }
 
@@ -85,6 +88,7 @@ export class InvocationRunner {
       | InvocationMessage["pre_agent_invocation_commands"]
       | InvocationMessage["post_agent_invocation_commands"],
     phase: string,
+    secrets: string[],
   ): Promise<void> {
     if (!commands) return;
 
@@ -97,6 +101,7 @@ export class InvocationRunner {
 
       const handler = new CommandHandler({
         command,
+        secrets,
         logger,
         abortController,
         onStdout: (stdout) =>

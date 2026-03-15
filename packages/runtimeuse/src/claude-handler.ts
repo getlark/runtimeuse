@@ -33,20 +33,25 @@ export const claudeHandler: AgentHandler = {
     invocation.signal.addEventListener("abort", onAbort, { once: true });
 
     try {
+      const queryOptions: Record<string, unknown> = {
+        systemPrompt: invocation.systemPrompt,
+        model: invocation.model,
+        abortController,
+        tools: { type: "preset", preset: "claude_code" },
+        permissionMode: "bypassPermissions",
+        allowDangerouslySkipPermissions: true,
+      };
+      if (invocation.outputFormat) {
+        queryOptions.outputFormat = invocation.outputFormat;
+      }
+
       const conversation = query({
         prompt: invocation.userPrompt,
-        options: {
-          systemPrompt: invocation.systemPrompt,
-          model: invocation.model,
-          outputFormat: invocation.outputFormat,
-          abortController,
-          tools: { type: "preset", preset: "claude_code" },
-          permissionMode: "bypassPermissions",
-          allowDangerouslySkipPermissions: true,
-        },
+        options: queryOptions as Parameters<typeof query>[0]["options"],
       });
 
-      let structuredOutput: Record<string, unknown> = {};
+      let resultText: string | undefined;
+      let structuredOutput: Record<string, unknown> | undefined;
       const metadata: Record<string, unknown> = {};
 
       for await (const message of conversation) {
@@ -66,17 +71,28 @@ export const claudeHandler: AgentHandler = {
           metadata.session_id = message.session_id;
 
           if (message.subtype === "success") {
-            if (message.structured_output != null) {
+            if (invocation.outputFormat) {
+              if (message.structured_output == null) {
+                throw new Error(
+                  "Expected structured_output in result but got none",
+                );
+              }
               structuredOutput =
                 message.structured_output as Record<string, unknown>;
             } else {
-              structuredOutput = { result: message.result };
+              if (message.structured_output != null) {
+                throw new Error(
+                  "Expected text result but got structured_output",
+                );
+              }
+              resultText = message.result;
             }
           } else {
-            structuredOutput = {
+            const errorOutput = {
               error: message.subtype,
               errors: "errors" in message ? message.errors : [],
             };
+            structuredOutput = errorOutput;
             sender.sendErrorMessage(
               `Agent ended with ${message.subtype}`,
               metadata,
@@ -85,7 +101,10 @@ export const claudeHandler: AgentHandler = {
         }
       }
 
-      return { structuredOutput, metadata };
+      if (structuredOutput !== undefined) {
+        return { type: "structured_output", structuredOutput, metadata };
+      }
+      return { type: "text", text: resultText ?? "", metadata };
     } finally {
       invocation.signal.removeEventListener("abort", onAbort);
     }

@@ -23,36 +23,20 @@ This starts a WebSocket server on port 8080 using the OpenAI agent handler by de
 
 ```python
 import asyncio
-import json
-from runtimeuse_client import RuntimeUseClient, InvocationMessage, ResultMessageInterface
+from runtimeuse_client import RuntimeUseClient, QueryOptions
 
 async def main():
     client = RuntimeUseClient(ws_url="ws://localhost:8080")
 
-    invocation = InvocationMessage(
-        message_type="invocation_message",
-        source_id="my-run-001",
-        model="gpt-4.1",
-        system_prompt="You are a helpful assistant.",
-        user_prompt="What is 2 + 2?",
-        output_format_json_schema_str=json.dumps({
-            "type": "json_schema",
-            "schema": {
-                "type": "object",
-                "properties": {"answer": {"type": "string"}},
-            },
-        }),
-        secrets_to_redact=[],
+    result = await client.query(
+        prompt="What is 2 + 2?",
+        options=QueryOptions(
+            system_prompt="You are a helpful assistant.",
+            model="gpt-4.1",
+        ),
     )
 
-    async def on_result(result: ResultMessageInterface):
-        print(result.structured_output)
-
-    await client.invoke(
-        invocation=invocation,
-        on_result_message=on_result,
-        result_message_cls=ResultMessageInterface,
-    )
+    print(result.data.text)
 
 asyncio.run(main())
 ```
@@ -63,7 +47,7 @@ asyncio.run(main())
 import { RuntimeUseServer, openaiHandler } from "runtimeuse";
 
 const server = new RuntimeUseServer({ handler: openaiHandler, port: 8080 });
-await server.start();
+await server.startListening();
 ```
 
 ## How It Works

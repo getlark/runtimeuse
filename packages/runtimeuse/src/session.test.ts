@@ -112,9 +112,10 @@ describe("WebSocketSession", () => {
     vi.clearAllMocks();
 
     mockHandlerRun.mockResolvedValue({
+      type: "structured_output",
       structuredOutput: { success: true },
       metadata: { duration_ms: 1000 },
-    });
+    } as AgentResult);
 
     mockArtifactManager.handleUploadResponse.mockResolvedValue(undefined);
     mockArtifactManager.waitForPendingRequests.mockResolvedValue(undefined);
@@ -148,7 +149,8 @@ describe("WebSocketSession", () => {
       mockHandlerRun.mockImplementation(
         () =>
           new Promise((r) => {
-            resolveAgent = () => r({ structuredOutput: { success: true } });
+            resolveAgent = () =>
+              r({ type: "structured_output", structuredOutput: { success: true } } as AgentResult);
           }),
       );
 
@@ -170,7 +172,8 @@ describe("WebSocketSession", () => {
       mockHandlerRun.mockImplementation(
         () =>
           new Promise((r) => {
-            resolveAgent = () => r({ structuredOutput: { success: true } });
+            resolveAgent = () =>
+              r({ type: "structured_output", structuredOutput: { success: true } } as AgentResult);
           }),
       );
 
@@ -202,7 +205,8 @@ describe("WebSocketSession", () => {
       mockHandlerRun.mockImplementation(
         () =>
           new Promise((r) => {
-            resolveAgent = () => r({ structuredOutput: {} });
+            resolveAgent = () =>
+              r({ type: "structured_output", structuredOutput: {} } as AgentResult);
           }),
       );
 
@@ -245,9 +249,10 @@ describe("WebSocketSession", () => {
 
     it("sends result_message from handler result", async () => {
       mockHandlerRun.mockResolvedValue({
+        type: "structured_output",
         structuredOutput: { success: true, steps: ["step1"] },
         metadata: { duration_ms: 1000 },
-      });
+      } as AgentResult);
 
       const { session, ws } = createSession();
       const done = session.run();
@@ -257,7 +262,7 @@ describe("WebSocketSession", () => {
       const sent = parseSentMessages(ws);
       const result = sent.find((m) => m.message_type === "result_message");
       expect(result).toBeDefined();
-      expect(result!.structured_output.success).toBe(true);
+      expect(result!.data.structured_output.success).toBe(true);
       expect(result!.metadata).toMatchObject({ duration_ms: 1000 });
     });
 

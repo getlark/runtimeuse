@@ -96,7 +96,7 @@ async function main() {
     port,
   });
 
-  await server.start();
+  await server.startListening();
 }
 
 main().catch((err) => {

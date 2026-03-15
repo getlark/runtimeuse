@@ -3,17 +3,16 @@ import type { Logger } from "./logger.js";
 export interface AgentInvocation {
   systemPrompt: string;
   userPrompt: string;
-  outputFormat: { type: "json_schema"; schema: Record<string, unknown> };
+  outputFormat?: { type: "json_schema"; schema: Record<string, unknown> };
   model: string;
   secrets: string[];
   signal: AbortSignal;
   logger: Logger;
 }
 
-export interface AgentResult {
-  structuredOutput: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
-}
+export type AgentResult =
+  | { type: "text"; text: string; metadata?: Record<string, unknown> }
+  | { type: "structured_output"; structuredOutput: Record<string, unknown>; metadata?: Record<string, unknown> };
 
 export interface MessageSender {
   sendAssistantMessage(textBlocks: string[]): void;

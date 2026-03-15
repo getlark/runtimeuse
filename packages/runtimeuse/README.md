@@ -32,7 +32,7 @@ Use it programmatically:
 import { RuntimeUseServer, openaiHandler, claudeHandler } from "runtimeuse";
 
 const server = new RuntimeUseServer({ handler: openaiHandler, port: 8080 });
-await server.start();
+await server.startListening();
 ```
 
 ### Custom Handler
@@ -61,6 +61,7 @@ const handler: AgentHandler = {
     );
 
     return {
+      type: "structured_output",
       structuredOutput: output,
       metadata: { duration_ms: 1500 },
     };
@@ -68,7 +69,7 @@ const handler: AgentHandler = {
 };
 
 const server = new RuntimeUseServer({ handler, port: 8080 });
-await server.start();
+await server.startListening();
 ```
 
 ## Core Concept: AgentHandler
@@ -90,7 +91,6 @@ interface AgentHandler {
 | `outputFormat` | `{ type: "json_schema"; schema: Record<string, unknown> }` | Expected output schema               |
 | `model`        | `string`                                                   | Model identifier                     |
 | `secrets`      | `string[]`                                                 | Values to redact from logs           |
-| `env`          | `Record<string, string>`                                   | Environment variables for the agent  |
 | `signal`       | `AbortSignal`                                              | Observe for cancellation (read-only) |
 | `logger`       | `Logger`                                                   | Prefixed logger for this invocation  |
 
@@ -101,13 +101,12 @@ sender.sendAssistantMessage(["Step 1: Navigating to login page..."]);
 sender.sendErrorMessage("Something went wrong", { code: "TIMEOUT" });
 ```
 
-**`AgentResult`** -- what your handler returns:
+**`AgentResult`** -- what your handler returns (discriminated union):
 
 ```typescript
-interface AgentResult {
-  structuredOutput: Record<string, unknown>; // the main result payload
-  metadata?: Record<string, unknown>; // optional metadata (timing, cost, etc.)
-}
+type AgentResult =
+  | { type: "text"; text: string; metadata?: Record<string, unknown> }
+  | { type: "structured_output"; structuredOutput: Record<string, unknown>; metadata?: Record<string, unknown> };
 ```
 
 ## Server Options
@@ -134,7 +133,7 @@ const server = new RuntimeUseServer({
   postInvocationDelayMs: 3_000,
 });
 
-await server.start();
+await server.startListening();
 // ... later
 await server.stop();
 ```
