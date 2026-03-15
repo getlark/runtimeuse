@@ -118,18 +118,33 @@ class QueryOptions:
     runtime behaviour settings (callbacks, timeout).
     """
 
+    #: System prompt prepended to every invocation.
     system_prompt: str
+    #: Model identifier passed to the agent runtime (e.g. ``"gpt-4o"``).
     model: str
+    #: JSON Schema string describing the desired output structure.
+    #: When set, ``result.data`` will be a :class:`StructuredOutputResult`
+    #: instead of :class:`TextResult`.
     output_format_json_schema_str: str | None = None
 
+    #: Caller-defined identifier for tracing/logging purposes.
     source_id: str | None = None
+    #: Secret values to redact from agent logs and responses.
     secrets_to_redact: list[str] = field(default_factory=list)
+    #: Directory inside the runtime environment where artifacts are written.
     artifacts_dir: str | None = None
+    #: Commands to run in the runtime environment before the agent starts.
     pre_agent_invocation_commands: list[CommandInterface] | None = None
+    #: Commands to run in the runtime environment after the agent finishes.
     post_agent_invocation_commands: list[CommandInterface] | None = None
+    #: Files to download into the runtime environment before invocation.
     pre_agent_downloadables: list[RuntimeEnvironmentDownloadableInterface] | None = None
 
+    #: Called for each assistant (intermediate) message streamed back.
     on_assistant_message: OnAssistantMessageCallback | None = None
+    #: Called when the runtime requests an artifact upload URL.
     on_artifact_upload_request: OnArtifactUploadRequestCallback | None = None
+    #: Overall timeout in seconds for the query. ``None`` means no limit.
     timeout: float | None = None
+    #: Logger instance; falls back to the module-level logger when ``None``.
     logger: logging.Logger | None = None
