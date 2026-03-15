@@ -15,7 +15,7 @@ const mockDownload =
 const mockExecute =
   vi.fn<
     (options: {
-      command: { command: string; cwd?: string; env?: Record<string, string> };
+      command: { command: string; cwd?: string };
       onStdout?: (stdout: string) => void;
       onStderr?: (stderr: string) => void;
     }) => Promise<{ exitCode: number }>
@@ -36,7 +36,6 @@ vi.mock("./command-handler.js", () => ({
             command: {
               command: string;
               cwd?: string;
-              env?: Record<string, string>;
             };
             onStdout?: (stdout: string) => void;
             onStderr?: (stderr: string) => void;
@@ -101,7 +100,7 @@ describe("InvocationRunner", () => {
     } as AgentResult);
   });
 
-  it("calls handler with parsed output format and defaults env to empty object", async () => {
+  it("calls handler with parsed output format", async () => {
     const { runner, message, abortController, logger, send } = createRunner();
 
     await runner.run(message);

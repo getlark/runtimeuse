@@ -25,7 +25,6 @@ class CommandInterface(BaseModel):
 
     cwd: str | None = None
     command: str
-    env: dict[str, str] = Field(default_factory=dict)
 
 
 class InvocationMessage(BaseModel):

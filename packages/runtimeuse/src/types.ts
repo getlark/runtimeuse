@@ -1,7 +1,6 @@
 interface Command {
   command: string;
   cwd?: string;
-  env?: Record<string, string>;
 }
 
 interface RuntimeEnvironmentDownloadable {

@@ -11,6 +11,7 @@ export interface CommandResult {
 
 export interface CommandHandlerOptions {
   command: Command;
+  secrets: string[];
   logger: Logger;
   abortController: AbortController;
   onStdout?: (stdout: string) => void;
@@ -18,12 +19,14 @@ export interface CommandHandlerOptions {
 }
 class CommandHandler {
   private readonly command: Command;
+  private readonly secrets: string[];
   private readonly logger: Logger;
   private readonly onStdout?: (stdout: string) => void;
   private readonly onStderr?: (stderr: string) => void;
   private readonly abortController: AbortController;
   constructor(options: CommandHandlerOptions) {
     this.command = options.command;
+    this.secrets = options.secrets;
     this.logger = options.logger;
     this.abortController = options.abortController;
     this.onStdout = options.onStdout;
@@ -31,7 +34,7 @@ class CommandHandler {
   }
 
   private redactSecrets(data: string): string {
-    return redactSecrets(data, Object.values(this.command.env ?? {}));
+    return redactSecrets(data, this.secrets);
   }
 
   async execute(): Promise<CommandResult> {
@@ -45,7 +48,7 @@ class CommandHandler {
         this.command.command,
         {
           cwd: this.command.cwd ?? process.cwd(),
-          env: { ...process.env, ...this.command.env },
+          env: process.env,
           signal: this.abortController.signal,
         },
         (error, stdout, stderr) => {
