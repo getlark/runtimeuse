@@ -1,9 +1,12 @@
 import asyncio
 from typing import Any, AsyncGenerator
 
+import dotenv
 import pytest
 
 from src.runtimeuse_client import RuntimeUseClient, QueryOptions
+
+dotenv.load_dotenv()
 
 
 class FakeTransport:

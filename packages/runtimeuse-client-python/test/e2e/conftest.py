@@ -26,7 +26,7 @@ def _port_is_open(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def ws_url():
     """Start a local runtimeuse server with the echo handler and yield its URL."""
     if not CLI_JS.exists():
