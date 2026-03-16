@@ -12,8 +12,8 @@ _logger = logging.getLogger(__name__)
 @pytest.fixture(scope="session")
 def openai_ws_url():
     """Create an E2B sandbox running runtimeuse with the OpenAI agent."""
-    if os.environ.get("USE_LOCAL_WS") == "true":
-        yield "ws://localhost:8080"
+    if os.environ.get("TEST_WS_URL"):
+        yield os.environ.get("TEST_WS_URL")
         return
 
     try:
@@ -29,8 +29,8 @@ def openai_ws_url():
 @pytest.fixture(scope="session")
 def claude_ws_url():
     """Create an E2B sandbox running runtimeuse with the Claude agent."""
-    if os.environ.get("USE_LOCAL_WS") == "true":
-        yield "ws://localhost:8080"
+    if os.environ.get("TEST_WS_URL"):
+        yield os.environ.get("TEST_WS_URL")
         return
 
     try:
@@ -48,9 +48,11 @@ def s3_client():
     """Boto3 S3 client for artifact upload/download tests."""
     try:
         import boto3
+        from botocore.config import Config
     except ImportError:
         pytest.fail("boto3 is required for S3 tests — install with: pip install boto3")
-    return boto3.client("s3")
+    region = os.environ.get("AWS_REGION", "us-east-1")
+    return boto3.client("s3", region_name=region, config=Config(signature_version="s3v4"))
 
 
 @pytest.fixture

@@ -68,7 +68,7 @@ def create_e2b_runtimeuse(
         template = (
             Template()
             .from_node_image("lts")
-            .apt_install(["unzip"])
+            .apt_install(["unzip", "openssh-server"])
             .npm_install(["@anthropic-ai/claude-code"], g=True)
             .run_cmd(
                 [

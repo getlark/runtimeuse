@@ -28,7 +28,7 @@ pytestmark = [pytest.mark.llm, pytest.mark.asyncio]
 
 _logger = logging.getLogger(__name__)
 
-MODEL = "gpt-4.1-mini"
+MODEL = "gpt-5.1"
 
 
 class TestOpenAIPrePostCommands:

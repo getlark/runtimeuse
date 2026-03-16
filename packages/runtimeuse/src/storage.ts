@@ -18,9 +18,17 @@ export async function uploadFile(
       body: content,
     });
 
-    logger.log(`File ${filePath} uploaded with status: ${response.status}`);
+    if (response.ok) {
+      logger.log(
+        `Upload succeeded for ${filePath} with status ${response.status} ${response.statusText}`,
+      );
+    } else {
+      logger.error(
+        `Upload failed for ${filePath} with status ${response.status} ${response.statusText}`,
+      );
+    }
 
-    return response.status === 200;
+    return response.ok;
   } catch (error) {
     logger.error("Upload error:", error);
     return false;

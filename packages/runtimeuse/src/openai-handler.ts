@@ -1,18 +1,56 @@
+import { exec } from "node:child_process";
+
 import zod from "zod";
 
 import {
   Agent,
   run as runAgent,
   codeInterpreterTool,
+  shellTool,
   webSearchTool,
   AgentOutputType,
 } from "@openai/agents";
+import type { Shell, ShellAction, ShellResult } from "@openai/agents";
 import type {
   AgentHandler,
   AgentInvocation,
   AgentResult,
   MessageSender,
 } from "./agent-handler.js";
+
+const localShell: Shell = {
+  async run(action: ShellAction): Promise<ShellResult> {
+    const output = [];
+    for (const cmd of action.commands) {
+      const result = await new Promise<{
+        stdout: string;
+        stderr: string;
+        exitCode: number | null;
+      }>((resolve) => {
+        exec(
+          cmd,
+          { timeout: action.timeoutMs ?? 30_000 },
+          (error, stdout, stderr) => {
+            resolve({
+              stdout: stdout ?? "",
+              stderr: stderr ?? "",
+              exitCode: error ? (error.code as number | undefined) ?? 1 : 0,
+            });
+          },
+        );
+      });
+      output.push({
+        stdout: result.stdout,
+        stderr: result.stderr,
+        outcome: {
+          type: "exit" as const,
+          exitCode: result.exitCode,
+        },
+      });
+    }
+    return { output };
+  },
+};
 
 export const openaiHandler: AgentHandler = {
   async run(
@@ -23,7 +61,14 @@ export const openaiHandler: AgentHandler = {
       name: "runtimeuse-agent",
       instructions: invocation.systemPrompt,
       model: invocation.model,
-      tools: [codeInterpreterTool(), webSearchTool()],
+      tools: [
+        webSearchTool(),
+        shellTool({
+          environment: { type: "local" },
+          shell: localShell,
+          needsApproval: async () => false,
+        }),
+      ],
     };
 
     if (invocation.outputFormat) {
@@ -32,6 +77,20 @@ export const openaiHandler: AgentHandler = {
     }
 
     const agent = new Agent(agentConfig);
+
+    agent.on("agent_tool_start", (_ctx, tool, details) => {
+      const tc = details.toolCall as Record<string, unknown>;
+      invocation.logger.log(
+        `[ToolStart] tool=${tc.name ?? tool.name} input=${tc.arguments ?? ""}`,
+      );
+    });
+
+    agent.on("agent_tool_end", (_ctx, tool, result, details) => {
+      const tc = details.toolCall as Record<string, unknown>;
+      invocation.logger.log(
+        `[ToolEnd] tool=${tc.name ?? tool.name} result=${result}`,
+      );
+    });
 
     const result = await runAgent(agent, invocation.userPrompt, {
       signal: invocation.signal,
