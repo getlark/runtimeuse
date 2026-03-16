@@ -14,6 +14,7 @@ from src.runtimeuse_client import (
     AssistantMessageInterface,
     AgentRuntimeError,
     CancelledException,
+    CommandInterface,
 )
 
 pytestmark = [pytest.mark.e2e, pytest.mark.asyncio]
@@ -104,6 +105,149 @@ class TestCancellation:
             await client.query(
                 prompt="STREAM:5",
                 options=make_query_options(on_assistant_message=abort_on_first),
+            )
+
+
+class TestPrePostCommands:
+    async def test_pre_command_output_streamed(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        received: list[AssistantMessageInterface] = []
+
+        async def on_msg(msg: AssistantMessageInterface):
+            received.append(msg)
+
+        result = await client.query(
+            prompt="ECHO:hello",
+            options=make_query_options(
+                pre_agent_invocation_commands=[
+                    CommandInterface(command="echo pre-sentinel")
+                ],
+                on_assistant_message=on_msg,
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        assert result.data.text == "hello"
+        all_text = [block for msg in received for block in msg.text_blocks]
+        assert any("pre-sentinel" in t for t in all_text)
+
+    async def test_post_command_output_streamed(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        received: list[AssistantMessageInterface] = []
+
+        async def on_msg(msg: AssistantMessageInterface):
+            received.append(msg)
+
+        result = await client.query(
+            prompt="ECHO:hello",
+            options=make_query_options(
+                post_agent_invocation_commands=[
+                    CommandInterface(command="echo post-sentinel")
+                ],
+                on_assistant_message=on_msg,
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        assert result.data.text == "hello"
+        all_text = [block for msg in received for block in msg.text_blocks]
+        assert any("post-sentinel" in t for t in all_text)
+
+    async def test_pre_and_post_commands_both_run(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        received: list[AssistantMessageInterface] = []
+
+        async def on_msg(msg: AssistantMessageInterface):
+            received.append(msg)
+
+        result = await client.query(
+            prompt="ECHO:hello",
+            options=make_query_options(
+                pre_agent_invocation_commands=[
+                    CommandInterface(command="echo pre-sentinel")
+                ],
+                post_agent_invocation_commands=[
+                    CommandInterface(command="echo post-sentinel")
+                ],
+                on_assistant_message=on_msg,
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        assert result.data.text == "hello"
+        all_text = [block for msg in received for block in msg.text_blocks]
+        assert any("pre-sentinel" in t for t in all_text)
+        assert any("post-sentinel" in t for t in all_text)
+
+    async def test_pre_command_with_cwd(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        received: list[AssistantMessageInterface] = []
+
+        async def on_msg(msg: AssistantMessageInterface):
+            received.append(msg)
+
+        await client.query(
+            prompt="ECHO:ok",
+            options=make_query_options(
+                pre_agent_invocation_commands=[
+                    CommandInterface(command="pwd", cwd="/tmp")
+                ],
+                on_assistant_message=on_msg,
+            ),
+        )
+
+        all_text = [block for msg in received for block in msg.text_blocks]
+        assert any("/tmp" in t for t in all_text)
+
+    async def test_post_command_with_cwd(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        received: list[AssistantMessageInterface] = []
+
+        async def on_msg(msg: AssistantMessageInterface):
+            received.append(msg)
+
+        await client.query(
+            prompt="ECHO:ok",
+            options=make_query_options(
+                post_agent_invocation_commands=[
+                    CommandInterface(command="pwd", cwd="/tmp")
+                ],
+                on_assistant_message=on_msg,
+            ),
+        )
+
+        all_text = [block for msg in received for block in msg.text_blocks]
+        assert any("/tmp" in t for t in all_text)
+
+    async def test_failed_pre_command_raises_error(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        with pytest.raises(AgentRuntimeError, match="failed with exit code"):
+            await client.query(
+                prompt="ECHO:should not reach",
+                options=make_query_options(
+                    pre_agent_invocation_commands=[
+                        CommandInterface(command="exit 1")
+                    ],
+                ),
+            )
+
+    async def test_failed_post_command_raises_error(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        with pytest.raises(AgentRuntimeError, match="failed with exit code"):
+            await client.query(
+                prompt="ECHO:hello",
+                options=make_query_options(
+                    post_agent_invocation_commands=[
+                        CommandInterface(command="exit 1")
+                    ],
+                ),
             )
 
 

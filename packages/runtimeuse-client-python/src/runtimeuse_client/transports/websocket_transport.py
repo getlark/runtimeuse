@@ -43,5 +43,7 @@ class WebSocketTransport:
     ) -> None:
         while True:
             message = await send_queue.get()
-            await ws.send(json.dumps(message))
-            send_queue.task_done()
+            try:
+                await ws.send(json.dumps(message))
+            finally:
+                send_queue.task_done()
