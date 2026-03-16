@@ -8,6 +8,7 @@
  *   STREAM:<n>            — send n assistant messages before returning
  *   ERROR:<msg>           — send error via sender and throw
  *   WRITE_FILE:<path> <c> — write file, sleep 3s for chokidar, return text
+ *   READ_FILE:<path>      — read file and return its contents as text
  *   (anything else)       — echo the prompt back as text
  */
 
@@ -52,6 +53,13 @@ export const handler = {
       fs.writeFileSync(filePath, content);
       await new Promise((r) => setTimeout(r, 3000));
       return { type: "text", text: `wrote ${filePath}` };
+    }
+
+    if (prompt.startsWith("READ_FILE:")) {
+      const filePath = prompt.slice("READ_FILE:".length).trim();
+      const fs = await import("fs");
+      const content = fs.readFileSync(filePath, "utf-8");
+      return { type: "text", text: content };
     }
 
     if (prompt.startsWith("ERROR:")) {
