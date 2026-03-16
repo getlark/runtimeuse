@@ -210,7 +210,10 @@ class TestArtifactUpload:
 
         await client.query(
             prompt=DEFAULT_PROMPT,
-            options=make_query_options(on_artifact_upload_request=on_artifact),
+            options=make_query_options(
+                artifacts_dir="/tmp/artifacts",
+                on_artifact_upload_request=on_artifact,
+            ),
         )
 
         response_msgs = [
@@ -446,3 +449,21 @@ class TestConstructor:
     def test_accepts_transport(self, fake_transport):
         transport, client = fake_transport([])
         assert client is not None
+
+    def test_artifacts_dir_requires_callback(self, make_query_options):
+        with pytest.raises(ValueError, match="must be specified together"):
+            make_query_options(artifacts_dir="/tmp/artifacts")
+
+        async def _dummy_cb(req):
+            return ArtifactUploadResult(
+                presigned_url="https://example.com", content_type="text/plain"
+            )
+
+        with pytest.raises(ValueError, match="must be specified together"):
+            make_query_options(on_artifact_upload_request=_dummy_cb)
+
+        opts = make_query_options(
+            artifacts_dir="/tmp/artifacts", on_artifact_upload_request=_dummy_cb
+        )
+        assert opts.artifacts_dir == "/tmp/artifacts"
+        assert opts.on_artifact_upload_request is _dummy_cb

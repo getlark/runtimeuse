@@ -148,3 +148,11 @@ class QueryOptions:
     timeout: float | None = None
     #: Logger instance; falls back to the module-level logger when ``None``.
     logger: logging.Logger | None = None
+
+    def __post_init__(self) -> None:
+        has_dir = self.artifacts_dir is not None
+        has_cb = self.on_artifact_upload_request is not None
+        if has_dir != has_cb:
+            raise ValueError(
+                "artifacts_dir and on_artifact_upload_request must be specified together"
+            )

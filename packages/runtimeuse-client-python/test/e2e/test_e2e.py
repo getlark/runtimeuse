@@ -2,6 +2,7 @@
 with the deterministic echo handler."""
 
 import json
+from uuid import uuid4
 
 import pytest
 
@@ -12,6 +13,8 @@ from src.runtimeuse_client import (
     TextResult,
     StructuredOutputResult,
     AssistantMessageInterface,
+    ArtifactUploadRequestMessageInterface,
+    ArtifactUploadResult,
     AgentRuntimeError,
     CancelledException,
     CommandInterface,
@@ -249,6 +252,37 @@ class TestPrePostCommands:
                     ],
                 ),
             )
+
+
+class TestArtifacts:
+    async def test_artifact_upload_request_received(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        artifacts_dir = f"/tmp/test-artifacts-{uuid4()}"
+        received_requests: list[ArtifactUploadRequestMessageInterface] = []
+
+        async def on_artifact(
+            req: ArtifactUploadRequestMessageInterface,
+        ) -> ArtifactUploadResult:
+            received_requests.append(req)
+            return ArtifactUploadResult(
+                presigned_url="http://localhost:1/fake-upload",
+                content_type="text/plain",
+            )
+
+        result = await client.query(
+            prompt=f"WRITE_FILE:{artifacts_dir}/test.txt test-content",
+            options=make_query_options(
+                artifacts_dir=artifacts_dir,
+                on_artifact_upload_request=on_artifact,
+                timeout=15,
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        assert result.data.text == f"wrote {artifacts_dir}/test.txt"
+        assert len(received_requests) == 1
+        assert received_requests[0].filename == "test.txt"
 
 
 class TestInvocationFieldsForwarded:
