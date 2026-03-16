@@ -32,5 +32,5 @@ jobs:
       - run: pip install -e ".[dev]" 2>/dev/null || pip install -e .
         working-directory: packages/runtimeuse-client-python
       - run: pip install pytest pytest-asyncio
-      - run: pytest test/
+      - run: pytest test/ -m "not sandbox and not llm"
         working-directory: packages/runtimeuse-client-python
