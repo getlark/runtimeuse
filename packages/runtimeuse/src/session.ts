@@ -4,8 +4,8 @@ import type { AgentHandler } from "./agent-handler.js";
 import { ArtifactManager } from "./artifact-manager.js";
 import type { UploadTracker } from "./upload-tracker.js";
 import type { InvocationMessage, IncomingMessage, OutgoingMessage } from "./types.js";
-import { sleep } from "./utils.js";
-import { createLogger, defaultLogger, type Logger } from "./logger.js";
+import { redactSecrets, sleep } from "./utils.js";
+import { createLogger, createRedactingLogger, defaultLogger, type Logger } from "./logger.js";
 import { InvocationRunner } from "./invocation-runner.js";
 
 export interface SessionConfig {
@@ -23,6 +23,7 @@ export class WebSocketSession {
   private readonly abortController = new AbortController();
   private artifactManager: ArtifactManager | null = null;
   private invocationReceived = false;
+  private secrets: string[] = [];
   private logger: Logger;
 
   constructor(ws: WebSocket, config: SessionConfig) {
@@ -117,7 +118,8 @@ export class WebSocketSession {
 
   private async executeInvocation(message: InvocationMessage): Promise<void> {
     const sourceId = message.source_id ?? crypto.randomUUID();
-    this.logger = createLogger(sourceId);
+    this.secrets = message.secrets_to_redact ?? [];
+    this.logger = createRedactingLogger(createLogger(sourceId), this.secrets);
     this.config.uploadTracker.setLogger(this.logger);
     this.logger.log(`Received invocation: model=${message.model}`);
 
@@ -175,7 +177,7 @@ export class WebSocketSession {
 
   private send(data: OutgoingMessage): void {
     if (this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(data));
+      this.ws.send(JSON.stringify(redactSecrets(data, this.secrets)));
     }
   }
 }

@@ -518,3 +518,81 @@ class TestFullInvocationLifecycle:
         )
 
         assert uploads.get("output.txt") == b"result-data"
+
+
+class TestSecretsRedaction:
+    """Verify secrets_to_redact are scrubbed from all outbound messages."""
+
+    async def test_secret_redacted_from_command_output(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        received: list[AssistantMessageInterface] = []
+
+        async def on_msg(msg: AssistantMessageInterface):
+            received.append(msg)
+
+        result = await client.query(
+            prompt="ECHO:ok",
+            options=make_query_options(
+                secrets_to_redact=["super-secret-value"],
+                pre_agent_invocation_commands=[
+                    CommandInterface(command="echo super-secret-value")
+                ],
+                on_assistant_message=on_msg,
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        all_text = [block for msg in received for block in msg.text_blocks]
+        assert not any("super-secret-value" in t for t in all_text)
+        assert any("[REDACTED]" in t for t in all_text)
+
+    async def test_secret_redacted_from_assistant_message(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        received: list[AssistantMessageInterface] = []
+
+        async def on_msg(msg: AssistantMessageInterface):
+            received.append(msg)
+
+        result = await client.query(
+            prompt="STREAM_TEXT:the password is super-secret-value ok",
+            options=make_query_options(
+                secrets_to_redact=["super-secret-value"],
+                on_assistant_message=on_msg,
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        assert result.data.text == "done"
+        all_text = [block for msg in received for block in msg.text_blocks]
+        assert not any("super-secret-value" in t for t in all_text)
+        assert any("[REDACTED]" in t for t in all_text)
+
+    async def test_secret_redacted_from_result_text(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        result = await client.query(
+            prompt="ECHO:the key is super-secret-value here",
+            options=make_query_options(
+                secrets_to_redact=["super-secret-value"],
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        assert "super-secret-value" not in result.data.text
+        assert "[REDACTED]" in result.data.text
+
+    async def test_secret_redacted_from_error_message(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        with pytest.raises(AgentRuntimeError) as exc_info:
+            await client.query(
+                prompt="ERROR:failed with super-secret-value exposed",
+                options=make_query_options(
+                    secrets_to_redact=["super-secret-value"],
+                ),
+            )
+
+        assert "super-secret-value" not in str(exc_info.value)
+        assert "[REDACTED]" in str(exc_info.value)

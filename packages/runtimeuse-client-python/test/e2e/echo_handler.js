@@ -6,6 +6,7 @@
  *   STRUCTURED:<json>     — return structured_output result
  *   SLOW:<ms>             — sleep then return text (timeout / cancel tests)
  *   STREAM:<n>            — send n assistant messages before returning
+ *   STREAM_TEXT:<text>    — send text as assistant message, then return "done"
  *   ERROR:<msg>           — send error via sender and throw
  *   WRITE_FILE:<path> <c> — write file, sleep 3s for chokidar, return text
  *   READ_FILE:<path>      — read file and return its contents as text
@@ -40,6 +41,12 @@ export const handler = {
         sender.sendAssistantMessage([`message ${i + 1} of ${count}`]);
       }
       return { type: "text", text: `streamed ${count} messages` };
+    }
+
+    if (prompt.startsWith("STREAM_TEXT:")) {
+      const text = prompt.slice("STREAM_TEXT:".length);
+      sender.sendAssistantMessage([text]);
+      return { type: "text", text: "done" };
     }
 
     if (prompt.startsWith("WRITE_FILE:")) {
