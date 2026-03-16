@@ -12,6 +12,10 @@ _logger = logging.getLogger(__name__)
 @pytest.fixture(scope="session")
 def openai_ws_url():
     """Create an E2B sandbox running runtimeuse with the OpenAI agent."""
+    if os.environ.get("USE_LOCAL_WS") == "true":
+        yield "ws://localhost:8080"
+        return
+
     try:
         sandbox, ws_url = create_e2b_runtimeuse(agent="openai")
     except RuntimeError as exc:
@@ -25,6 +29,10 @@ def openai_ws_url():
 @pytest.fixture(scope="session")
 def claude_ws_url():
     """Create an E2B sandbox running runtimeuse with the Claude agent."""
+    if os.environ.get("USE_LOCAL_WS") == "true":
+        yield "ws://localhost:8080"
+        return
+
     try:
         sandbox, ws_url = create_e2b_runtimeuse(agent="claude")
     except RuntimeError as exc:
@@ -86,7 +94,9 @@ def wait_for_s3_object(
             elapsed = timeout - (deadline - time.monotonic())
             _logger.info(
                 "S3 object not found (attempt %d, %.1fs elapsed), retrying in %ss",
-                attempt, elapsed, poll_interval,
+                attempt,
+                elapsed,
+                poll_interval,
             )
             last_exc = exc
         time.sleep(poll_interval)

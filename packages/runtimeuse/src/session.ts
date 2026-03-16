@@ -107,7 +107,9 @@ export class WebSocketSession {
         }
         this.invocationReceived = true;
         await this.executeInvocation(message);
-        if (process.env.NODE_ENV !== "test") {
+        const hasArtifacts = this.artifactManager !== null;
+        if (process.env.NODE_ENV !== "test" || hasArtifacts) {
+          this.logger.log("Waiting for post-invocation delay...");
           await sleep(this.config.postInvocationDelayMs ?? 3_000);
         }
         await this.finalize();

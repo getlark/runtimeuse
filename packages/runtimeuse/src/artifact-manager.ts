@@ -35,6 +35,7 @@ export class ArtifactManager {
     this.uploadTracker = config.uploadTracker;
     this.send = config.send;
 
+    fs.mkdirSync(config.artifactsDir, { recursive: true });
     this.reloadIgnorePatterns();
 
     this.watcher = chokidar.watch(config.artifactsDir, {
@@ -104,6 +105,7 @@ export class ArtifactManager {
   }
 
   async stopWatching(): Promise<void> {
+    this.logger.log("Stopping artifact watcher");
     await this.watcher.close();
   }
 

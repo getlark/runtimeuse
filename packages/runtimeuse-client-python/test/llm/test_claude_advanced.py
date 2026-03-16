@@ -45,10 +45,16 @@ class TestClaudePrePostCommands:
                 system_prompt="Reply concisely in plain text.",
                 model=MODEL,
                 pre_agent_invocation_commands=[
-                    CommandInterface(command="echo pre-sentinel", cwd="/tmp")
+                    CommandInterface(
+                        command="echo 'pre-command ran' > /tmp/pre-sentinel.txt && echo pre-sentinel",
+                        cwd="/tmp",
+                    )
                 ],
                 post_agent_invocation_commands=[
-                    CommandInterface(command="echo post-sentinel", cwd="/tmp")
+                    CommandInterface(
+                        command="echo 'post-command ran' > /tmp/post-sentinel.txt && echo post-sentinel",
+                        cwd="/tmp",
+                    )
                 ],
                 on_assistant_message=on_msg,
                 timeout=60,
@@ -59,12 +65,12 @@ class TestClaudePrePostCommands:
         assert isinstance(result.data, TextResult)
 
         all_text = [block for msg in received for block in msg.text_blocks]
-        assert any("pre-sentinel" in t for t in all_text), (
-            "pre-command output should appear in streamed messages"
-        )
-        assert any("post-sentinel" in t for t in all_text), (
-            "post-command output should appear in streamed messages"
-        )
+        assert any(
+            "pre-sentinel" in t for t in all_text
+        ), "pre-command output should appear in streamed messages"
+        assert any(
+            "post-sentinel" in t for t in all_text
+        ), "post-command output should appear in streamed messages"
 
     async def test_failed_pre_command_raises_error(self, claude_ws_url: str):
         client = RuntimeUseClient(ws_url=claude_ws_url)
@@ -74,9 +80,7 @@ class TestClaudePrePostCommands:
                 options=QueryOptions(
                     system_prompt="Reply concisely.",
                     model=MODEL,
-                    pre_agent_invocation_commands=[
-                        CommandInterface(command="exit 1")
-                    ],
+                    pre_agent_invocation_commands=[CommandInterface(command="exit 1")],
                     timeout=30,
                 ),
             )
@@ -100,7 +104,8 @@ class TestClaudeArtifactsS3:
             )
             _logger.info(
                 "Returning presigned URL for %s: %s",
-                req.filename, presigned,
+                req.filename,
+                presigned,
             )
             return ArtifactUploadResult(
                 presigned_url=presigned,
@@ -168,7 +173,8 @@ class TestClaudeFullLifecycle:
             )
             _logger.info(
                 "Returning presigned URL for %s: %s",
-                req.filename, presigned,
+                req.filename,
+                presigned,
             )
             return ArtifactUploadResult(
                 presigned_url=presigned,
@@ -207,12 +213,12 @@ class TestClaudeFullLifecycle:
         assert isinstance(result.data, TextResult)
 
         all_text = [block for msg in received for block in msg.text_blocks]
-        assert any("setup-payload" in t for t in all_text), (
-            "pre-command should have cat'd the downloaded file"
-        )
-        assert any("lifecycle-done" in t for t in all_text), (
-            "post-command should have run after the agent"
-        )
+        assert any(
+            "setup-payload" in t for t in all_text
+        ), "pre-command should have cat'd the downloaded file"
+        assert any(
+            "lifecycle-done" in t for t in all_text
+        ), "post-command should have run after the agent"
 
         body = wait_for_s3_object(s3_client, s3_test_bucket, artifact_key)
         assert b"lifecycle-result" in body
