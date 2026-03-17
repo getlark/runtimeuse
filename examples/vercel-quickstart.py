@@ -68,7 +68,11 @@ def create_sandbox() -> tuple[Sandbox, str]:
     sandbox = Sandbox.create(
         runtime="node24",
         ports=[8081],
-        env={"ANTHROPIC_API_KEY": anthropic_api_key},
+        env={
+            "ANTHROPIC_API_KEY": anthropic_api_key,
+            "IS_SANDBOX": "1",
+            "CLAUDE_SKIP_ROOT_CHECK": "1",
+        },
     )
     print(f"Sandbox created: {sandbox.sandbox_id}")
 

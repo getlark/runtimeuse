@@ -30,6 +30,11 @@ Thumbs.db
 # Scratch files
 scratch_*
 
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
 # Logs and temp
 *.log
 npm-debug.log*

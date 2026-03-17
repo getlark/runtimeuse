@@ -47,7 +47,13 @@ def _create_template_with_alias(alias: str):
         .from_node_image("lts")
         .set_workdir(WORKDIR)
         .npm_install(["@anthropic-ai/claude-code"], g=True)
-        .set_envs({"ANTHROPIC_API_KEY": anthropic_api_key})
+        .set_envs(
+            {
+                "ANTHROPIC_API_KEY": anthropic_api_key,
+                "IS_SANDBOX": "1",
+                "CLAUDE_SKIP_ROOT_CHECK": "1",
+            }
+        )
         .set_start_cmd(start_cmd, wait_for_port(8080))
     )
 
