@@ -103,6 +103,8 @@ async def on_artifact(request: ArtifactUploadRequestMessageInterface) -> Artifac
     return ArtifactUploadResult(presigned_url=presigned_url, content_type=content_type)
 ```
 
+When using artifact uploads, set both `artifacts_dir` and `on_artifact_upload_request` in `QueryOptions`; the client validates that they are provided together.
+
 ### Cancellation
 
 Call `client.abort()` from any coroutine to cancel a running query. The client sends a cancel message to the runtime and `query` raises `CancelledException`.
@@ -152,3 +154,8 @@ except CancelledException:
 | -------------------- | ------------------------------------------- |
 | `AgentRuntimeError`  | Raised when the agent runtime returns an error (carries `.error` and `.metadata`) |
 | `CancelledException` | Raised when `client.abort()` is called during a query |
+
+## Related Docs
+
+- [Repository overview](../../README.md)
+- [TypeScript runtime README](../runtimeuse/README.md)
