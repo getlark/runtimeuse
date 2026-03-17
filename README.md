@@ -14,7 +14,7 @@ Run AI agents inside sandboxes and communicate with them over WebSocket.
 ### 1. Start the runtime (inside a sandbox)
 
 ```bash
-npx -y runtimeuse@latest
+npx -y runtimeuse
 ```
 
 This starts a WebSocket server on port 8080 using the OpenAI agent handler by default. Use `--agent claude` for Claude. The Claude handler also requires the `claude` CLI to be installed in the sandbox, for example with `npm install -g @anthropic-ai/claude-code`.

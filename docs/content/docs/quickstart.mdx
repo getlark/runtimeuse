@@ -11,49 +11,80 @@ Inside any sandbox that can run `npx` and expose a port:
 npx -y runtimeuse
 ```
 
-This starts a WebSocket server on port 8080 using the OpenAI agent handler by default. To use Claude instead:
+This starts a WebSocket server on port 8080 using the OpenAI agent handler by default.
+
+To use Claude instead:
 
 ```bash
 npx -y runtimeuse --agent claude
 ```
 
-## Step 2: Connect from Python
-
-Install the Python client:
+The Claude handler requires the `claude` CLI to be installed in the sandbox, for example with:
 
 ```bash
-pip install runtimeuse
+npm install -g @anthropic-ai/claude-code
 ```
 
-Connect to the WebSocket server and invoke the agent:
+## Step 2: Install the Python Client
+
+```bash
+pip install runtimeuse-client
+```
+
+## Step 3: Connect from Python
+
+For local development, connect directly to the runtime's WebSocket URL:
 
 ```python
-from runtimeuse import RuntimeUseClient, RuntimeUseInvoker, InvocationMessage, ResultMessageInterface
+import asyncio
+from runtimeuse_client import RuntimeUseClient, QueryOptions
 
-# Connect to the sandbox's WebSocket server
-sandbox = Sandbox.create()
-sandbox.run("npx -y runtimeuse")
-ws_url = sandbox.get_url(8080)
+async def main():
+    client = RuntimeUseClient(ws_url="ws://localhost:8080")
 
-client = RuntimeUseClient(ws_url=ws_url)
-invoker = RuntimeUseInvoker(client)
+    result = await client.query(
+        prompt="What is 2 + 2?",
+        options=QueryOptions(
+            system_prompt="You are a helpful assistant.",
+            model="gpt-4.1",
+        ),
+    )
 
-# Build an invocation
-invocation = InvocationMessage(
-    message_type="invocation_message",
-    system_prompt="You are a helpful assistant.",
-    user_prompt="Run the tests.",
-    output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}'
-)
+    print(result.data.text)
 
-# Invoke and handle the result
-async def on_result(result: ResultMessageInterface):
-    print(f"Result: {result.structured_output}")
-
-await invoker.invoke(
-    invocation=invocation,
-    on_result_message=on_result,
-    result_message_cls=ResultMessageInterface,
-)
+asyncio.run(main())
 ```
 
+## Step 4: Use a Sandbox URL in Production-Like Flows
+
+In a real sandbox integration, your sandbox provider gives you the runtime URL after starting the process inside the sandbox. The Python client then connects from outside the sandbox:
+
+```python
+import asyncio
+from runtimeuse_client import RuntimeUseClient, QueryOptions
+
+async def main():
+    # Pseudocode: start the runtime inside your sandbox provider
+    sandbox = Sandbox.create()
+    sandbox.run("npx -y runtimeuse")
+    ws_url = sandbox.get_url(8080)
+
+    client = RuntimeUseClient(ws_url=ws_url)
+
+    result = await client.query(
+        prompt="Summarize the repository.",
+        options=QueryOptions(
+            system_prompt="You are a helpful assistant.",
+            model="gpt-4.1",
+        ),
+    )
+
+    print(result.data.text)
+
+asyncio.run(main())
+```
+
+## Next Steps
+
+- See the [runtime package README](https://github.com/getlark/runtimeuse/tree/main/packages/runtimeuse) for runtime configuration and custom handlers.
+- See the [Python client README](https://github.com/getlark/runtimeuse/tree/main/packages/runtimeuse-client-python) for structured output, artifact uploads, and cancellation.
