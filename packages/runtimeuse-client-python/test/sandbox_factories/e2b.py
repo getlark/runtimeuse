@@ -68,8 +68,15 @@ def create_e2b_runtimeuse(
         template = (
             Template()
             .from_node_image("lts")
-            .apt_install(["unzip"])
+            .apt_install(["unzip", "openssh-server"])
             .npm_install(["@anthropic-ai/claude-code"], g=True)
+            .run_cmd(
+                [
+                    "curl -fsSL -o /usr/local/bin/websocat https://github.com/vi/websocat/releases/latest/download/websocat.x86_64-unknown-linux-musl",
+                    "chmod a+x /usr/local/bin/websocat",
+                ],
+                user="root",
+            )
             .set_envs(envs)
             .set_start_cmd(start_cmd, wait_for_port(8080))
         )
@@ -83,6 +90,17 @@ def create_e2b_runtimeuse(
         )
 
         sandbox = Sandbox.create(template=alias, api_key=e2b_api_key)
+
+    # start ssh server in the background
+    sandbox.commands.run(
+        "sudo websocat -b --exit-on-eof ws-l:0.0.0.0:8081 tcp:127.0.0.1:22",
+        background=True,
+        timeout=0,
+    )
+    host = sandbox.get_host(8081)
+    _logger.info(
+        f"SSH server connection string: ssh -o 'ProxyCommand=websocat --binary -B 65536 - wss://8081-%h.e2b.app' user@{sandbox.sandbox_id}"
+    )
 
     host = sandbox.get_host(8080)
     ws_url = f"wss://{host}"

@@ -52,7 +52,7 @@ export type {
 
 // Utilities
 export { redactSecrets, sleep } from "./utils.js";
-export { createLogger, defaultLogger } from "./logger.js";
+export { createLogger, createRedactingLogger, defaultLogger } from "./logger.js";
 export type { Logger } from "./logger.js";
 
 // Constants

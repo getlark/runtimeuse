@@ -40,6 +40,20 @@ export const claudeHandler: AgentHandler = {
         tools: { type: "preset", preset: "claude_code" },
         permissionMode: "bypassPermissions",
         allowDangerouslySkipPermissions: true,
+        hooks: {
+          PostToolUse: [
+            {
+              hooks: [
+                async (input: Record<string, unknown>) => {
+                  invocation.logger.log(
+                    `[PostToolUse] tool=${input.tool_name} input=${JSON.stringify(input.tool_input)} response=${JSON.stringify(input.tool_response)}`,
+                  );
+                  return {};
+                },
+              ],
+            },
+          ],
+        },
       };
       if (invocation.outputFormat) {
         queryOptions.outputFormat = invocation.outputFormat;

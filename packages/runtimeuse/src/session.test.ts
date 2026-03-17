@@ -349,6 +349,63 @@ describe("WebSocketSession", () => {
     });
   });
 
+  describe("secrets redaction", () => {
+    it("redacts secrets from result messages", async () => {
+      mockHandlerRun.mockResolvedValue({
+        type: "text",
+        text: "the key is secret123 here",
+        metadata: { info: "secret123 leaked" },
+      } as AgentResult);
+
+      const { session, ws } = createSession();
+      const done = session.run();
+      sendMessage(ws, INVOCATION_MSG);
+      await done;
+
+      const sent = parseSentMessages(ws);
+      const result = sent.find((m) => m.message_type === "result_message");
+      expect(result).toBeDefined();
+      expect(result!.data.text).toBe("the key is [REDACTED] here");
+      expect(result!.metadata.info).toBe("[REDACTED] leaked");
+    });
+
+    it("redacts secrets from assistant messages", async () => {
+      mockHandlerRun.mockImplementation(async (_inv, sender) => {
+        sender.sendAssistantMessage(["password is secret123"]);
+        return { type: "text", text: "done" } as AgentResult;
+      });
+
+      const { session, ws } = createSession();
+      const done = session.run();
+      sendMessage(ws, INVOCATION_MSG);
+      await done;
+
+      const sent = parseSentMessages(ws);
+      const assistant = sent.find(
+        (m) => m.message_type === "assistant_message",
+      );
+      expect(assistant).toBeDefined();
+      expect(assistant!.text_blocks[0]).toBe("password is [REDACTED]");
+    });
+
+    it("redacts secrets from error messages", async () => {
+      mockHandlerRun.mockRejectedValueOnce(
+        new Error("crash with secret123 in trace"),
+      );
+
+      const { session, ws } = createSession();
+      const done = session.run();
+      sendMessage(ws, INVOCATION_MSG);
+      await done;
+
+      const sent = parseSentMessages(ws);
+      const error = sent.find((m) => m.message_type === "error_message");
+      expect(error).toBeDefined();
+      expect(error!.error).not.toContain("secret123");
+      expect(error!.error).toContain("[REDACTED]");
+    });
+  });
+
   describe("pre-agent invocation commands", () => {
     it("continues to agent when pre-agent command exits with 0", async () => {
       mockCommandExecute.mockResolvedValueOnce({ exitCode: 0 });

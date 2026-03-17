@@ -2,6 +2,8 @@
 with the deterministic echo handler."""
 
 import json
+import os
+from uuid import uuid4
 
 import pytest
 
@@ -12,9 +14,12 @@ from src.runtimeuse_client import (
     TextResult,
     StructuredOutputResult,
     AssistantMessageInterface,
+    ArtifactUploadRequestMessageInterface,
+    ArtifactUploadResult,
     AgentRuntimeError,
     CancelledException,
     CommandInterface,
+    RuntimeEnvironmentDownloadableInterface,
 )
 
 pytestmark = [pytest.mark.e2e, pytest.mark.asyncio]
@@ -251,6 +256,38 @@ class TestPrePostCommands:
             )
 
 
+class TestArtifacts:
+    async def test_artifact_upload_request_received(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        artifacts_dir = f"/tmp/test-artifacts-{uuid4()}"
+        os.makedirs(artifacts_dir, exist_ok=True)
+        received_requests: list[ArtifactUploadRequestMessageInterface] = []
+
+        async def on_artifact(
+            req: ArtifactUploadRequestMessageInterface,
+        ) -> ArtifactUploadResult:
+            received_requests.append(req)
+            return ArtifactUploadResult(
+                presigned_url="http://localhost:1/fake-upload",
+                content_type="text/plain",
+            )
+
+        result = await client.query(
+            prompt=f"WRITE_FILE:{artifacts_dir}/test.txt test-content",
+            options=make_query_options(
+                artifacts_dir=artifacts_dir,
+                on_artifact_upload_request=on_artifact,
+                timeout=15,
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        assert result.data.text == f"wrote {artifacts_dir}/test.txt"
+        assert len(received_requests) == 1
+        assert received_requests[0].filename == "test.txt"
+
+
 class TestInvocationFieldsForwarded:
     async def test_fields_round_trip(
         self, client: RuntimeUseClient, make_query_options
@@ -266,3 +303,296 @@ class TestInvocationFieldsForwarded:
 
         assert isinstance(result.data, TextResult)
         assert result.data.text == "field test"
+
+
+class TestArtifactUploadIntegration:
+    """Verify that artifact file content actually reaches the upload target."""
+
+    async def test_artifact_content_uploaded(
+        self, client: RuntimeUseClient, make_query_options, http_server
+    ):
+        base_url, _files, uploads = http_server
+        artifacts_dir = f"/tmp/test-artifacts-{uuid4()}"
+        os.makedirs(artifacts_dir, exist_ok=True)
+
+        async def on_artifact(
+            req: ArtifactUploadRequestMessageInterface,
+        ) -> ArtifactUploadResult:
+            return ArtifactUploadResult(
+                presigned_url=f"{base_url}/uploads/{req.filename}",
+                content_type="text/plain",
+            )
+
+        result = await client.query(
+            prompt=f"WRITE_FILE:{artifacts_dir}/hello.txt some-content",
+            options=make_query_options(
+                artifacts_dir=artifacts_dir,
+                on_artifact_upload_request=on_artifact,
+                timeout=15,
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        assert result.data.text == f"wrote {artifacts_dir}/hello.txt"
+        assert uploads.get("hello.txt") == b"some-content"
+
+    async def test_multiple_artifacts_uploaded(
+        self, ws_url: str, make_query_options, http_server
+    ):
+        base_url, _files, uploads = http_server
+        artifacts_dir = f"/tmp/test-artifacts-{uuid4()}"
+        os.makedirs(artifacts_dir, exist_ok=True)
+
+        async def on_artifact(
+            req: ArtifactUploadRequestMessageInterface,
+        ) -> ArtifactUploadResult:
+            return ArtifactUploadResult(
+                presigned_url=f"{base_url}/uploads/{req.filename}",
+                content_type="text/plain",
+            )
+
+        opts = dict(
+            artifacts_dir=artifacts_dir,
+            on_artifact_upload_request=on_artifact,
+            timeout=15,
+        )
+
+        client1 = RuntimeUseClient(ws_url=ws_url)
+        result1 = await client1.query(
+            prompt=f"WRITE_FILE:{artifacts_dir}/one.txt first",
+            options=make_query_options(**opts),
+        )
+        assert isinstance(result1.data, TextResult)
+
+        client2 = RuntimeUseClient(ws_url=ws_url)
+        result2 = await client2.query(
+            prompt=f"WRITE_FILE:{artifacts_dir}/two.txt second",
+            options=make_query_options(**opts),
+        )
+        assert isinstance(result2.data, TextResult)
+
+        assert uploads.get("one.txt") == b"first"
+        assert uploads.get("two.txt") == b"second"
+
+
+class TestPreAgentDownloadables:
+    """Verify pre_agent_downloadables are fetched into the runtime before the agent runs."""
+
+    async def test_downloaded_file_accessible(
+        self, client: RuntimeUseClient, make_query_options, http_server
+    ):
+        base_url, files, _uploads = http_server
+        files["setup.sh"] = b"#!/bin/bash\necho hello"
+        working_dir = f"/tmp/dl-test-{uuid4()}"
+
+        result = await client.query(
+            prompt=f"READ_FILE:{working_dir}/setup.sh",
+            options=make_query_options(
+                pre_agent_downloadables=[
+                    RuntimeEnvironmentDownloadableInterface(
+                        download_url=f"{base_url}/files/setup.sh",
+                        working_dir=working_dir,
+                    )
+                ],
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        assert result.data.text == "#!/bin/bash\necho hello"
+
+    async def test_multiple_downloadables(
+        self, ws_url: str, make_query_options, http_server
+    ):
+        base_url, files, _uploads = http_server
+        files["a.txt"] = b"content-a"
+        files["b.txt"] = b"content-b"
+        working_dir = f"/tmp/dl-test-{uuid4()}"
+
+        client = RuntimeUseClient(ws_url=ws_url)
+        result = await client.query(
+            prompt=f"READ_FILE:{working_dir}/a.txt",
+            options=make_query_options(
+                pre_agent_downloadables=[
+                    RuntimeEnvironmentDownloadableInterface(
+                        download_url=f"{base_url}/files/a.txt",
+                        working_dir=working_dir,
+                    ),
+                    RuntimeEnvironmentDownloadableInterface(
+                        download_url=f"{base_url}/files/b.txt",
+                        working_dir=working_dir,
+                    ),
+                ],
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        assert result.data.text == "content-a"
+
+        client2 = RuntimeUseClient(ws_url=ws_url)
+        result2 = await client2.query(
+            prompt=f"READ_FILE:{working_dir}/b.txt",
+            options=make_query_options(
+                pre_agent_downloadables=[],
+            ),
+        )
+        assert isinstance(result2.data, TextResult)
+        assert result2.data.text == "content-b"
+
+    async def test_download_failure_raises_error(
+        self, client: RuntimeUseClient, make_query_options, http_server
+    ):
+        base_url, _files, _uploads = http_server
+        working_dir = f"/tmp/dl-test-{uuid4()}"
+
+        with pytest.raises(AgentRuntimeError, match="Download failed"):
+            await client.query(
+                prompt="ECHO:should not reach",
+                options=make_query_options(
+                    pre_agent_downloadables=[
+                        RuntimeEnvironmentDownloadableInterface(
+                            download_url=f"{base_url}/files/nonexistent",
+                            working_dir=working_dir,
+                        )
+                    ],
+                ),
+            )
+
+
+class TestFullInvocationLifecycle:
+    """Combined test: download -> pre-command -> agent -> post-command -> artifact upload."""
+
+    async def test_full_invocation_ordering(
+        self, ws_url: str, make_query_options, http_server
+    ):
+        base_url, files, uploads = http_server
+        files["runtime.sh"] = b"runtime-payload"
+        dl_dir = f"/tmp/dl-lifecycle-{uuid4()}"
+        artifacts_dir = f"/tmp/art-lifecycle-{uuid4()}"
+        os.makedirs(artifacts_dir, exist_ok=True)
+
+        received: list[AssistantMessageInterface] = []
+
+        async def on_msg(msg: AssistantMessageInterface):
+            received.append(msg)
+
+        async def on_artifact(
+            req: ArtifactUploadRequestMessageInterface,
+        ) -> ArtifactUploadResult:
+            return ArtifactUploadResult(
+                presigned_url=f"{base_url}/uploads/{req.filename}",
+                content_type="text/plain",
+            )
+
+        client = RuntimeUseClient(ws_url=ws_url)
+        result = await client.query(
+            prompt=f"WRITE_FILE:{artifacts_dir}/output.txt result-data",
+            options=make_query_options(
+                pre_agent_downloadables=[
+                    RuntimeEnvironmentDownloadableInterface(
+                        download_url=f"{base_url}/files/runtime.sh",
+                        working_dir=dl_dir,
+                    )
+                ],
+                pre_agent_invocation_commands=[
+                    CommandInterface(command=f"cat {dl_dir}/runtime.sh")
+                ],
+                post_agent_invocation_commands=[
+                    CommandInterface(command="echo lifecycle-done")
+                ],
+                artifacts_dir=artifacts_dir,
+                on_artifact_upload_request=on_artifact,
+                on_assistant_message=on_msg,
+                timeout=20,
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        assert result.data.text == f"wrote {artifacts_dir}/output.txt"
+
+        all_text = [block for msg in received for block in msg.text_blocks]
+        assert any("runtime-payload" in t for t in all_text), (
+            "pre-command should have cat'd the downloaded file"
+        )
+        assert any("lifecycle-done" in t for t in all_text), (
+            "post-command should have run after the agent"
+        )
+
+        assert uploads.get("output.txt") == b"result-data"
+
+
+class TestSecretsRedaction:
+    """Verify secrets_to_redact are scrubbed from all outbound messages."""
+
+    async def test_secret_redacted_from_command_output(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        received: list[AssistantMessageInterface] = []
+
+        async def on_msg(msg: AssistantMessageInterface):
+            received.append(msg)
+
+        result = await client.query(
+            prompt="ECHO:ok",
+            options=make_query_options(
+                secrets_to_redact=["super-secret-value"],
+                pre_agent_invocation_commands=[
+                    CommandInterface(command="echo super-secret-value")
+                ],
+                on_assistant_message=on_msg,
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        all_text = [block for msg in received for block in msg.text_blocks]
+        assert not any("super-secret-value" in t for t in all_text)
+        assert any("[REDACTED]" in t for t in all_text)
+
+    async def test_secret_redacted_from_assistant_message(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        received: list[AssistantMessageInterface] = []
+
+        async def on_msg(msg: AssistantMessageInterface):
+            received.append(msg)
+
+        result = await client.query(
+            prompt="STREAM_TEXT:the password is super-secret-value ok",
+            options=make_query_options(
+                secrets_to_redact=["super-secret-value"],
+                on_assistant_message=on_msg,
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        assert result.data.text == "done"
+        all_text = [block for msg in received for block in msg.text_blocks]
+        assert not any("super-secret-value" in t for t in all_text)
+        assert any("[REDACTED]" in t for t in all_text)
+
+    async def test_secret_redacted_from_result_text(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        result = await client.query(
+            prompt="ECHO:the key is super-secret-value here",
+            options=make_query_options(
+                secrets_to_redact=["super-secret-value"],
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        assert "super-secret-value" not in result.data.text
+        assert "[REDACTED]" in result.data.text
+
+    async def test_secret_redacted_from_error_message(
+        self, client: RuntimeUseClient, make_query_options
+    ):
+        with pytest.raises(AgentRuntimeError) as exc_info:
+            await client.query(
+                prompt="ERROR:failed with super-secret-value exposed",
+                options=make_query_options(
+                    secrets_to_redact=["super-secret-value"],
+                ),
+            )
+
+        assert "super-secret-value" not in str(exc_info.value)
+        assert "[REDACTED]" in str(exc_info.value)

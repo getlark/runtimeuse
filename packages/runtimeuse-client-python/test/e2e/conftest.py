@@ -3,7 +3,9 @@ import os
 import signal
 import socket
 import subprocess
+import threading
 import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 
@@ -87,3 +89,51 @@ def query_options() -> QueryOptions:
 @pytest.fixture
 def make_query_options():
     return _make_query_options
+
+
+@pytest.fixture
+def http_server():
+    """Local HTTP server for serving downloadable files and receiving artifact uploads.
+
+    Yields (base_url, files, uploads) where:
+      - files: dict[str, bytes]  — seed with content before the test runs a query
+      - uploads: dict[str, bytes] — populated by PUT requests during the test
+    """
+    uploads: dict[str, bytes] = {}
+    files: dict[str, bytes] = {}
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            if self.path.startswith("/files/"):
+                name = self.path[len("/files/"):]
+                if name in files:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.end_headers()
+                    self.wfile.write(files[name])
+                    return
+            self.send_response(404)
+            self.end_headers()
+
+        def do_PUT(self) -> None:
+            if self.path.startswith("/uploads/"):
+                name = self.path[len("/uploads/"):]
+                length = int(self.headers.get("Content-Length", 0))
+                uploads[name] = self.rfile.read(length)
+                self.send_response(200)
+                self.end_headers()
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, format: str, *args: Any) -> None:
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    yield f"http://127.0.0.1:{port}", files, uploads
+
+    server.shutdown()
