@@ -28,6 +28,9 @@ export const claudeHandler: AgentHandler = {
     sender: MessageSender,
   ): Promise<AgentResult> {
     const abortController = new AbortController();
+    let resultText: string | undefined;
+    let structuredOutput: Record<string, unknown> | undefined;
+    const metadata: Record<string, unknown> = {};
 
     const onAbort = () => abortController.abort();
     invocation.signal.addEventListener("abort", onAbort, { once: true });
@@ -63,10 +66,6 @@ export const claudeHandler: AgentHandler = {
         prompt: invocation.userPrompt,
         options: queryOptions as Parameters<typeof query>[0]["options"],
       });
-
-      let resultText: string | undefined;
-      let structuredOutput: Record<string, unknown> | undefined;
-      const metadata: Record<string, unknown> = {};
 
       for await (const message of conversation) {
         if (message.type === "assistant") {

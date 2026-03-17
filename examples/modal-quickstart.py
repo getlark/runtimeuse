@@ -18,8 +18,12 @@ from __future__ import annotations
 
 import asyncio
 import os
+import queue
+import threading
+import time
 
 import modal
+from modal.exception import ClientClosed
 
 from runtimeuse_client import (
     RuntimeEnvironmentDownloadableInterface,
@@ -31,6 +35,7 @@ from runtimeuse_client import (
 
 WORKDIR = "/runtimeuse"
 _SERVER_READY_SIGNAL = "RuntimeUse server listening on port"
+_SERVER_STARTUP_TIMEOUT_S = 120
 
 
 def _get_env_or_fail(name: str) -> str:
@@ -42,10 +47,61 @@ def _get_env_or_fail(name: str) -> str:
 
 def _http_to_ws(url: str) -> str:
     if url.startswith("https://"):
-        return "wss://" + url[len("https://"):]
+        return "wss://" + url[len("https://") :]
     if url.startswith("http://"):
-        return "ws://" + url[len("http://"):]
+        return "ws://" + url[len("http://") :]
     return url
+
+
+def _wait_for_server_ready(process) -> None:
+    log_queue: queue.Queue[tuple[str, str]] = queue.Queue()
+    ready = threading.Event()
+
+    def _pump_stream(prefix: str, stream) -> None:
+        try:
+            for line in stream:
+                log_queue.put((prefix, line))
+                if _SERVER_READY_SIGNAL in line:
+                    ready.set()
+        except ClientClosed:
+            # The example tears down the sandbox after the query finishes, which can
+            # close the underlying Modal client while daemon threads are still
+            # draining logs.
+            return
+
+    for prefix, stream in (
+        ("[runtimeuse]", process.stdout),
+        ("[runtimeuse:err]", process.stderr),
+    ):
+        threading.Thread(
+            target=_pump_stream,
+            args=(prefix, stream),
+            daemon=True,
+        ).start()
+
+    deadline = time.monotonic() + _SERVER_STARTUP_TIMEOUT_S
+    while time.monotonic() < deadline:
+        while True:
+            try:
+                prefix, line = log_queue.get_nowait()
+            except queue.Empty:
+                break
+            print(f"{prefix} {line}", end="")
+
+        if ready.is_set():
+            return
+
+        exit_code = process.poll()
+        if exit_code is not None:
+            raise RuntimeError(
+                f"runtimeuse server exited before becoming ready (exit code {exit_code})"
+            )
+
+        time.sleep(0.2)
+
+    raise RuntimeError(
+        f"runtimeuse server did not start within {_SERVER_STARTUP_TIMEOUT_S}s"
+    )
 
 
 def create_sandbox() -> tuple[modal.Sandbox, str]:
@@ -60,7 +116,13 @@ def create_sandbox() -> tuple[modal.Sandbox, str]:
         "npm install -g @anthropic-ai/claude-code",
     )
 
-    secret = modal.Secret.from_dict({"ANTHROPIC_API_KEY": anthropic_api_key})
+    secret = modal.Secret.from_dict(
+        {
+            "ANTHROPIC_API_KEY": anthropic_api_key,
+            "IS_SANDBOX": "1",
+            "CLAUDE_SKIP_ROOT_CHECK": "1",
+        }
+    )
 
     print("Creating Modal Sandbox (this may take a few minutes the first time)...")
     with modal.enable_output():
@@ -75,16 +137,17 @@ def create_sandbox() -> tuple[modal.Sandbox, str]:
     print(f"Sandbox created: {sandbox.object_id}")
 
     print("Starting runtimeuse server...")
+
     process = sandbox.exec(
-        "npx", "-y", "runtimeuse", "--agent", "claude",
-        env={"ANTHROPIC_API_KEY": anthropic_api_key},
+        "npx",
+        "-y",
+        "runtimeuse",
+        "--agent",
+        "claude",
     )
 
     print("Waiting for runtimeuse server to start...")
-    for line in process.stdout:
-        print(f"[runtimeuse] {line}", end="")
-        if _SERVER_READY_SIGNAL in line:
-            break
+    _wait_for_server_ready(process)
 
     tunnel = sandbox.tunnels()[8080]
     ws_url = _http_to_ws(tunnel.url)

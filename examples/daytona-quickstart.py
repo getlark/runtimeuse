@@ -77,7 +77,11 @@ def create_sandbox() -> tuple[Daytona, Sandbox]:
     sandbox = daytona.create(
         CreateSandboxFromImageParams(
             image=image,
-            env_vars={"ANTHROPIC_API_KEY": anthropic_api_key},
+            env_vars={
+                "ANTHROPIC_API_KEY": anthropic_api_key,
+                "IS_SANDBOX": "1",
+                "CLAUDE_SKIP_ROOT_CHECK": "1",
+            },
             public=True,
         ),
         timeout=300,
@@ -94,13 +98,11 @@ async def _start_server_and_wait(sandbox: Sandbox) -> str:
     Returns the WebSocket URL once the server is listening.
     """
 
-    anthropic_api_key = _get_env_or_fail("ANTHROPIC_API_KEY")
-
     sandbox.process.create_session(_SESSION_ID)
     exec_resp = sandbox.process.execute_session_command(
         _SESSION_ID,
         SessionExecuteRequest(
-            command=f"export ANTHROPIC_API_KEY={anthropic_api_key} && npx -y runtimeuse --agent claude",
+            command=f"npx -y runtimeuse --agent claude",
             run_async=True,
         ),
     )
@@ -181,5 +183,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    # asyncio.run(_run_query("wss://8080-zgcun375m7vgilui.daytonaproxy01.net"))
     main()

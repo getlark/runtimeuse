@@ -276,6 +276,35 @@ describe("WebSocketSession", () => {
 
       expectSentError(ws, "agent crashed");
     });
+
+    it("includes structured metadata when agent throws", async () => {
+      const error = Object.assign(new Error("agent crashed"), {
+        metadata: {
+          handler: "claude",
+          session_id: "abc123",
+          stderr_tail: "permission denied",
+        },
+        code: "ERR_AGENT_CRASH",
+      });
+      mockHandlerRun.mockRejectedValueOnce(error);
+
+      const { session, ws } = createSession();
+      const done = session.run();
+      sendMessage(ws, INVOCATION_MSG);
+      await done;
+
+      const sent = parseSentMessages(ws);
+      const runtimeError = sent.find((m) => m.message_type === "error_message");
+      expect(runtimeError).toBeDefined();
+      expect(runtimeError!.metadata).toMatchObject({
+        error_name: "Error",
+        handler: "claude",
+        session_id: "abc123",
+      });
+      expect(runtimeError!.metadata.error_details).toMatchObject({
+        code: "ERR_AGENT_CRASH",
+      });
+    });
   });
 
   describe("finalization", () => {
@@ -389,9 +418,12 @@ describe("WebSocketSession", () => {
     });
 
     it("redacts secrets from error messages", async () => {
-      mockHandlerRun.mockRejectedValueOnce(
-        new Error("crash with secret123 in trace"),
-      );
+      const error = Object.assign(new Error("crash with secret123 in trace"), {
+        metadata: {
+          stderr_tail: "secret123 appeared in stderr",
+        },
+      });
+      mockHandlerRun.mockRejectedValueOnce(error);
 
       const { session, ws } = createSession();
       const done = session.run();
@@ -399,10 +431,12 @@ describe("WebSocketSession", () => {
       await done;
 
       const sent = parseSentMessages(ws);
-      const error = sent.find((m) => m.message_type === "error_message");
-      expect(error).toBeDefined();
-      expect(error!.error).not.toContain("secret123");
-      expect(error!.error).toContain("[REDACTED]");
+      const runtimeError = sent.find((m) => m.message_type === "error_message");
+      expect(runtimeError).toBeDefined();
+      expect(runtimeError!.error).not.toContain("secret123");
+      expect(runtimeError!.error).toContain("[REDACTED]");
+      expect(JSON.stringify(runtimeError!.metadata)).not.toContain("secret123");
+      expect(JSON.stringify(runtimeError!.metadata)).toContain("[REDACTED]");
     });
   });
 
