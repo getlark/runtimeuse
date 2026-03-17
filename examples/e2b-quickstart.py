@@ -21,11 +21,14 @@ from e2b import Template, wait_for_port, default_build_logger
 from e2b_code_interpreter import Sandbox
 
 from runtimeuse_client import (
+    RuntimeEnvironmentDownloadableInterface,
     RuntimeUseClient,
     QueryOptions,
     AssistantMessageInterface,
     TextResult,
 )
+
+WORKDIR = "/runtimeuse"
 
 
 def _get_env_or_fail(name: str) -> str:
@@ -35,22 +38,14 @@ def _get_env_or_fail(name: str) -> str:
     return value
 
 
-def create_sandbox() -> tuple[Sandbox, str]:
-    """Build an E2B template with runtimeuse + Claude Code and return (sandbox, ws_url)."""
-    e2b_api_key = _get_env_or_fail("E2B_API_KEY")
+def _create_template_with_alias(alias: str):
     anthropic_api_key = _get_env_or_fail("ANTHROPIC_API_KEY")
-
-    alias = "runtimeuse-quickstart-claude"
     start_cmd = "npx -y runtimeuse --agent claude"
-
-    print(
-        f"Building E2B template '{alias}' (this may take a few minutes the first time)..."
-    )
 
     template = (
         Template()
         .from_node_image("lts")
-        .apt_install(["unzip"])
+        .set_workdir(WORKDIR)
         .npm_install(["@anthropic-ai/claude-code"], g=True)
         .set_envs({"ANTHROPIC_API_KEY": anthropic_api_key})
         .set_start_cmd(start_cmd, wait_for_port(8080))
@@ -63,6 +58,19 @@ def create_sandbox() -> tuple[Sandbox, str]:
         memory_mb=2048,
         on_build_logs=default_build_logger(),
     )
+
+
+def create_sandbox() -> tuple[Sandbox, str]:
+    """Build an E2B template with runtimeuse + Claude Code and return (sandbox, ws_url)."""
+
+    alias = "runtimeuse-quickstart-claude"
+    e2b_api_key = _get_env_or_fail("E2B_API_KEY")
+
+    print(
+        f"Building E2B template '{alias}' (this may take a few minutes the first time)..."
+    )
+
+    _create_template_with_alias(alias)
 
     sandbox = Sandbox.create(template=alias, api_key=e2b_api_key)
     ws_url = f"wss://{sandbox.get_host(8080)}"
@@ -81,7 +89,7 @@ async def main() -> None:
             for block in msg.text_blocks:
                 print(f"[assistant] {block}")
 
-        prompt = "What files are in the current directory? List them."
+        prompt = "Summarize the contents of the codex repository and list your favorite file in the repository."
         print(f"Sending query: {prompt}")
 
         result = await client.query(
@@ -90,6 +98,12 @@ async def main() -> None:
                 system_prompt="You are a helpful assistant.",
                 model="claude-sonnet-4-20250514",
                 on_assistant_message=on_message,
+                pre_agent_downloadables=[
+                    RuntimeEnvironmentDownloadableInterface(
+                        download_url="https://github.com/openai/codex/archive/refs/heads/main.zip",
+                        working_dir=WORKDIR,
+                    )
+                ],
             ),
         )
 

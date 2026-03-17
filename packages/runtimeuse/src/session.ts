@@ -46,8 +46,6 @@ export class WebSocketSession {
             error: String(error),
             metadata: {},
           });
-
-          // todo: maybe close ws on error since nothing will happen after?
         }
       });
 
