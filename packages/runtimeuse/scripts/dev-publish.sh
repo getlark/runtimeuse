@@ -37,9 +37,15 @@ aws s3 cp "$PROJECT_DIR/$ZIP_NAME" "s3://${S3_BUCKET}/${S3_KEY}"
 
 URL=$(aws s3 presign "s3://${S3_BUCKET}/${S3_KEY}" --expires-in "$PRESIGN_EXPIRY")
 
+QUICK_CMD="curl -L \"$URL\" -o runtimeuse.zip && unzip -o runtimeuse.zip -d runtimeuse && node runtimeuse/dist/cli.js"
+
 echo ""
 echo "Download URL (expires in ${PRESIGN_EXPIRY}s):"
 echo "$URL"
 echo ""
+
 echo "Quick start:"
-echo "  curl -L \"$URL\" -o runtimeuse.zip && unzip -o runtimeuse.zip -d runtimeuse && node runtimeuse/dist/cli.js & echo \"RuntimeUse WS server started (PID \$!)\""
+echo "  $QUICK_CMD"
+echo ""
+printf "%s" "$QUICK_CMD" | pbcopy
+echo "(copied to clipboard)"

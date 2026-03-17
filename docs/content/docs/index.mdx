@@ -1,16 +1,18 @@
 ---
 title: Introduction
-description: Run AI agents in sandboxes and communicate over WebSocket.
+description: Run AI agents in sandboxes and communicate with them over WebSocket.
 ---
 
 ## What is RuntimeUse?
 
-RuntimeUse lets you run an AI agent inside any sandbox and communicate with it over WebSocket — handling artifact uploads, pre-commands, file downloads, cancellation, and structured results.
+RuntimeUse lets you run an AI agent inside any sandbox and communicate with it over WebSocket. It handles the runtime lifecycle for you: file downloads, pre-commands, artifact uploads, cancellation, and structured results.
 
 It is made up of two parts:
 
-1. **NPM Runtime executable** — Run it in any sandbox with `npx runtimeuse`. It sets up your agent of choice (Claude, OpenAI, etc) and starts a WebSocket server to interact with it.
-2. **Client libraries** — Simple abstractions for interacting with the sandbox WebSocket server from your API server, worker nodes, etc.
+1. **`runtimeuse`**: the TypeScript runtime that runs inside the sandbox and exposes a WebSocket server.
+2. **`runtimeuse-client`**: the Python client that connects from outside the sandbox and sends invocations.
+
+Today, the recommended path is to run the runtime in the sandbox and use the Python client from your application code.
 
 ## Built-in Agent Handlers
 
@@ -21,6 +23,12 @@ The runtime ships with two built-in handlers:
 
 Switch between them with `--agent openai` or `--agent claude`.
 
+The Claude handler also requires the `claude` CLI to be installed in the sandbox, for example:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
 ## Key Features
 
 - **Sandbox-agnostic** — works with any provider that can run `npx` and expose a port
@@ -30,4 +38,6 @@ Switch between them with `--agent openai` or `--agent claude`.
 
 <Cards>
   <Card title="Quickstart" href="/docs/quickstart" />
+  <Card title="Runtime Package" href="https://github.com/getlark/runtimeuse/tree/main/packages/runtimeuse" />
+  <Card title="Python Client" href="https://github.com/getlark/runtimeuse/tree/main/packages/runtimeuse-client-python" />
 </Cards>

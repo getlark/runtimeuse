@@ -2,6 +2,8 @@
 
 TypeScript runtime package for [runtimeuse](https://github.com/getlark/runtimeuse). Runs inside the sandbox and handles the agent lifecycle: receives invocations over WebSocket, executes your agent handler, manages artifact uploads, runs pre-commands, downloads runtime files, and sends structured results back to the client.
 
+This package is used together with the Python client in [`runtimeuse-client`](../runtimeuse-client-python/README.md), which connects to the runtime from outside the sandbox.
+
 ## Installation
 
 ```bash
@@ -20,6 +22,8 @@ This starts a WebSocket server on port 8080 using the OpenAI agent handler (defa
 
 - **`openai`** (default) -- uses `@openai/agents` SDK
 - **`claude`** -- uses `@anthropic-ai/claude-agent-sdk` with Claude Code tools and `bypassPermissions` mode
+
+The Claude handler requires the `claude` CLI to be installed in the sandbox environment.
 
 ```bash
 npx -y runtimeuse                    # OpenAI (default)
@@ -218,3 +222,8 @@ Command output (stdout/stderr) from pre-commands is automatically redacted using
 | `AssistantMessage`              | Runtime -> Client | Intermediate text from the agent        |
 | `ArtifactUploadRequestMessage`  | Runtime -> Client | Request a presigned URL for an artifact |
 | `ErrorMessage`                  | Runtime -> Client | Error during execution                  |
+
+## Related Docs
+
+- [Repository overview](../../README.md)
+- [Python client README](../runtimeuse-client-python/README.md)

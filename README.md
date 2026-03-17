@@ -2,7 +2,7 @@
 
 [![Twitter Follow](https://img.shields.io/twitter/follow/getlark)](https://twitter.com/getlark)
 
-Communicate with AI agents inside sandboxes over WebSocket.
+Run AI agents inside sandboxes and communicate with them over WebSocket.
 
 | Package                                                    | Language   | Role                                       | Install                         |
 | ---------------------------------------------------------- | ---------- | ------------------------------------------ | ------------------------------- |
@@ -14,10 +14,10 @@ Communicate with AI agents inside sandboxes over WebSocket.
 ### 1. Start the runtime (inside a sandbox)
 
 ```bash
-npx -y runtimeuse@latest
+npx -y runtimeuse
 ```
 
-This starts a WebSocket server on port 8080 using the OpenAI agent handler by default. Use `--agent claude` for Claude.
+This starts a WebSocket server on port 8080 using the OpenAI agent handler by default. Use `--agent claude` for Claude. The Claude handler also requires the `claude` CLI to be installed in the sandbox, for example with `npm install -g @anthropic-ai/claude-code`.
 
 ### 2. Connect from Python
 
@@ -41,33 +41,12 @@ async def main():
 asyncio.run(main())
 ```
 
-### 3. Or use the runtime programmatically (TypeScript)
-
-```typescript
-import { RuntimeUseServer, openaiHandler } from "runtimeuse";
-
-const server = new RuntimeUseServer({ handler: openaiHandler, port: 8080 });
-await server.startListening();
-```
-
-## How It Works
-
-```
-Python Client  ──> WebSocket  ──>  Runtime (in sandbox)  ──>  AgentHandler
-                                                                ├── openai (default)
-                                                                └── claude
-```
-
-1. The client sends an `InvocationMessage` over WebSocket
-2. The runtime downloads files and runs pre-commands (if any)
-3. The `AgentHandler` executes the agent with the given prompts and model
-4. Intermediate `AssistantMessage`s stream back to the client
-5. Files in the artifacts directory are auto-detected and uploaded via presigned URL handshake
-6. A final `ResultMessage` with structured output is sent back
-7. The runtime runs post-commands (if any)
-
 See the [runtime README](./packages/runtimeuse/README.md) and [client README](./packages/runtimeuse-client-python/README.md) for full API docs.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, package-specific development commands, and the recommended checks to run before opening a PR.
 
 ## License
 
-BSL-1.1
+[FSL-1.1-ALv2](./LICENSE.md)
