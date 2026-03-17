@@ -22,10 +22,12 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 load_dotenv()
 load_dotenv(Path.cwd() / ".env.local")
@@ -37,11 +39,16 @@ from runtimeuse_client import (
     RuntimeUseClient,
     QueryOptions,
     AssistantMessageInterface,
-    TextResult,
+    StructuredOutputResult,
 )
 
 WORKDIR = "/vercel/sandbox"
 _SERVER_READY_SIGNAL = "RuntimeUse server listening on port"
+
+
+class RepoStats(BaseModel):
+    file_count: int
+    char_count: int
 
 
 def _get_env_or_fail(name: str) -> str:
@@ -110,7 +117,7 @@ async def _run_query(ws_url: str) -> None:
         for block in msg.text_blocks:
             print(f"[assistant] {block}")
 
-    prompt = "Summarize the contents of the codex repository and list your favorite file in the repository."
+    prompt = "Inspect the codex repository and return the total file count and total character count across all files as JSON."
     print(f"Sending query: {prompt}")
 
     result = await client.query(
@@ -125,12 +132,19 @@ async def _run_query(ws_url: str) -> None:
                     working_dir=WORKDIR,
                 )
             ],
+            output_format_json_schema_str=json.dumps(
+                {
+                    "type": "json_schema",
+                    "schema": RepoStats.model_json_schema(),
+                }
+            ),
         ),
     )
 
     print("\n--- Final Result ---")
-    assert isinstance(result.data, TextResult)
-    print(result.data.text)
+    assert isinstance(result.data, StructuredOutputResult)
+    stats = RepoStats.model_validate(result.data.structured_output)
+    print(stats.model_dump())
 
 
 def main() -> None:
