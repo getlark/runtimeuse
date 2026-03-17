@@ -8,12 +8,13 @@ defaults:
   run:
     working-directory: packages/runtimeuse
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -23,3 +24,5 @@ jobs:
       - run: npm install
       - run: npm run build
       - run: npm publish
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
