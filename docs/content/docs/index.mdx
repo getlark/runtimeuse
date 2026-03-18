@@ -1,9 +1,9 @@
 ---
 title: Introduction
-description: Run AI agents (Claude Code, OpenAI Agents, and more) in any sandbox, controlled from Python over WebSocket.
+description: Run AI agents (Claude Code, OpenAI Agents, and more) in any sandbox, controlled from Python or TypeScript over WebSocket.
 ---
 
-[RuntimeUse](https://github.com/getlark/runtimeuse) is an open-source runtime and client library for running AI agents inside isolated sandboxes and controlling them from Python over WebSocket.
+[RuntimeUse](https://github.com/getlark/runtimeuse) is an open-source runtime and client library for running AI agents inside isolated sandboxes and controlling them from Python or TypeScript over WebSocket.
 
 
 <img src="/terminal.svg" alt="RuntimeUse terminal" style={{ maxWidth: '560px', width: '100%' }} />
@@ -25,7 +25,7 @@ description: Run AI agents (Claude Code, OpenAI Agents, and more) in any sandbox
 ## What it handles
 
 - **Task invocations**: send a prompt to any agent runtime and receive a result over WebSocket as text or typed JSON.
-- **pre_agent_downloadables**: fetch code, repos, or data into the sandbox before the run starts.
+- **Pre-agent downloadables**: fetch code, repos, or data into the sandbox before the run starts.
 - **Pre-commands**: run bash commands before the agent starts executing.
 - **Artifact uploads**: move generated files out of the sandbox with a presigned URL handshake.
 - **Streaming and cancellation**: receive progress updates and stop runs cleanly.
