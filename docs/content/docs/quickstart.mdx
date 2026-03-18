@@ -77,13 +77,12 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
   </Tab>
   <Tab>
     ```bash
-    pip install e2b e2b-code-interpreter
+    pip install e2b
     ```
 
     ```python
     # Required env vars: E2B_API_KEY, ANTHROPIC_API_KEY
-    from e2b import Template, wait_for_port
-    from e2b_code_interpreter import Sandbox
+    from e2b import Template, wait_for_port, Sandbox
 
     template = (
         Template()

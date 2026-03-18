@@ -17,8 +17,7 @@ from __future__ import annotations
 import asyncio
 import os
 
-from e2b import Template, wait_for_port, default_build_logger
-from e2b_code_interpreter import Sandbox
+from e2b import Template, wait_for_port, default_build_logger, Sandbox
 
 from runtimeuse_client import (
     RuntimeEnvironmentDownloadableInterface,
