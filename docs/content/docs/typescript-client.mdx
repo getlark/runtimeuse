@@ -22,7 +22,7 @@ const client = new RuntimeUseClient({ wsUrl: "ws://localhost:8080" });
 
 const result = await client.query("What is 2 + 2", {
   system_prompt: "You are a helpful assistant.",
-  model: "gpt-4.1",
+  model: "gpt-5.3",
 });
 
 const data = result.data as TextResult;
@@ -52,7 +52,7 @@ const result = await client.query(
   "Inspect the repository and return the total file count and character count as JSON.",
   {
     system_prompt: "You are a helpful assistant.",
-    model: "gpt-4.1",
+    model: "gpt-5.3",
     output_format_json_schema_str: JSON.stringify({
       type: "json_schema",
       schema: z.toJSONSchema(RepoStats),
@@ -76,7 +76,7 @@ const result = await client.query(
   "Summarize the contents of this repository and list your favorite file.",
   {
     system_prompt: "You are a helpful assistant.",
-    model: "gpt-4.1",
+    model: "gpt-5.3",
     pre_agent_downloadables: [
       {
         download_url:
@@ -114,7 +114,7 @@ const result = await client.query(
   "Generate a report and save it as report.txt.",
   {
     system_prompt: "You are a helpful assistant.",
-    model: "gpt-4.1",
+    model: "gpt-5.3",
     artifacts_dir: "/runtimeuse/output",
     on_artifact_upload_request: onArtifactUploadRequest,
   }
@@ -136,7 +136,7 @@ async function onAssistantMessage(msg: AssistantMessage): Promise<void> {
 
 const result = await client.query("Inspect this repository.", {
   system_prompt: "You are a helpful assistant.",
-  model: "gpt-4.1",
+  model: "gpt-5.3",
   on_assistant_message: onAssistantMessage,
 });
 ```
@@ -166,7 +166,7 @@ Use `timeout` (in seconds) to limit how long a query can run. If the limit is ex
 ```typescript
 const result = await client.query("Do the thing.", {
   system_prompt: "You are a helpful assistant.",
-  model: "gpt-4.1",
+  model: "gpt-5.3",
   timeout: 120,
 });
 ```
@@ -178,7 +178,7 @@ Pass `secrets_to_redact` to strip sensitive strings from any output or logs that
 ```typescript
 const result = await client.query("Check the API status.", {
   system_prompt: "You are a helpful assistant.",
-  model: "gpt-4.1",
+  model: "gpt-5.3",
   secrets_to_redact: ["sk-live-abc123", "my_db_password"],
 });
 ```
