@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "runtimeuse-client"
-version = "0.5.0"
+version = "0.6.0"
 description = "Client library for AI agent runtime communication over WebSocket"
 readme = "README.md"
 license = {"text" = "FSL"}
@@ -26,6 +26,9 @@ dev = [
     "daytona",
     "e2b",
     "e2b-code-interpreter",
+    "modal",
+    "python-dotenv",
+    "vercel",
 ]
 
 [tool.hatch.build.targets.wheel]

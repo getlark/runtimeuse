@@ -16,7 +16,16 @@ Start the runtime inside any sandbox, then connect from outside:
 
 ```python
 import asyncio
-from runtimeuse_client import RuntimeUseClient, QueryOptions, TextResult, StructuredOutputResult
+from runtimeuse_client import (
+    AssistantMessageInterface,
+    QueryOptions,
+    RuntimeEnvironmentDownloadableInterface,
+    RuntimeUseClient,
+    StructuredOutputResult,
+    TextResult,
+)
+
+WORKDIR = "/runtimeuse"
 
 async def main():
     # Start the runtime in a sandbox (provider-specific)
@@ -26,12 +35,23 @@ async def main():
 
     client = RuntimeUseClient(ws_url=ws_url)
 
+    async def on_assistant(msg: AssistantMessageInterface) -> None:
+        for block in msg.text_blocks:
+            print(f"[assistant] {block}")
+
     # Text response (no output schema)
     result = await client.query(
-        prompt="What is the capital of France?",
+        prompt="Summarize the contents of the codex repository and list your favorite file in the repository.",
         options=QueryOptions(
             system_prompt="You are a helpful assistant.",
             model="gpt-4.1",
+            on_assistant_message=on_assistant,
+            pre_agent_downloadables=[
+                RuntimeEnvironmentDownloadableInterface(
+                    download_url="https://github.com/openai/codex/archive/refs/heads/main.zip",
+                    working_dir=WORKDIR,
+                )
+            ],
         ),
     )
     assert isinstance(result.data, TextResult)
@@ -39,11 +59,30 @@ async def main():
 
     # Structured response (with output schema)
     result = await client.query(
-        prompt="Return the capital of France.",
+        prompt="Inspect the codex repository and return the total file count and total character count across all files as JSON.",
         options=QueryOptions(
             system_prompt="You are a helpful assistant.",
             model="gpt-4.1",
-            output_format_json_schema_str='{"type":"json_schema","schema":{"type":"object"}}',
+            pre_agent_downloadables=[
+                RuntimeEnvironmentDownloadableInterface(
+                    download_url="https://github.com/openai/codex/archive/refs/heads/main.zip",
+                    working_dir=WORKDIR,
+                )
+            ],
+            output_format_json_schema_str="""
+{
+  "type": "json_schema",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "file_count": { "type": "integer" },
+      "char_count": { "type": "integer" }
+    },
+    "required": ["file_count", "char_count"],
+    "additionalProperties": false
+  }
+}
+""",
         ),
     )
     assert isinstance(result.data, StructuredOutputResult)
@@ -71,10 +110,11 @@ Manages the WebSocket connection to the agent runtime and runs the message loop:
 client = RuntimeUseClient(ws_url="ws://localhost:8080")
 
 result = await client.query(
-    prompt="Do the thing.",
+    prompt="Summarize the contents of the codex repository.",
     options=QueryOptions(
         system_prompt="You are a helpful assistant.",
         model="gpt-4.1",
+        pre_agent_downloadables=[downloadable],          # optional
         output_format_json_schema_str='...',         # optional -- omit for text response
         on_assistant_message=on_assistant,            # optional
         on_artifact_upload_request=on_artifact,       # optional -- return ArtifactUploadResult

@@ -15,6 +15,7 @@ npm install runtimeuse
 Run the runtime inside any sandbox:
 
 ```bash
+export OPENAI_API_KEY=your_openai_api_key
 npx -y runtimeuse
 ```
 
@@ -38,6 +39,8 @@ import { RuntimeUseServer, openaiHandler, claudeHandler } from "runtimeuse";
 const server = new RuntimeUseServer({ handler: openaiHandler, port: 8080 });
 await server.startListening();
 ```
+
+Pair this with the richer Python client examples in [`runtimeuse-client`](../runtimeuse-client-python/README.md), including streamed assistant messages and `pre_agent_downloadables` for bootstrapping files into the sandbox before invocation.
 
 ### Custom Handler
 

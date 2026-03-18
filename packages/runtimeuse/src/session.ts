@@ -4,6 +4,7 @@ import type { AgentHandler } from "./agent-handler.js";
 import { ArtifactManager } from "./artifact-manager.js";
 import type { UploadTracker } from "./upload-tracker.js";
 import type { InvocationMessage, IncomingMessage, OutgoingMessage } from "./types.js";
+import { getErrorMessage, serializeErrorMetadata } from "./error-utils.js";
 import { redactSecrets, sleep } from "./utils.js";
 import { createLogger, createRedactingLogger, defaultLogger, type Logger } from "./logger.js";
 import { InvocationRunner } from "./invocation-runner.js";
@@ -43,11 +44,9 @@ export class WebSocketSession {
           this.logger.error("Error processing message:", error);
           this.send({
             message_type: "error_message",
-            error: String(error),
-            metadata: {},
+            error: getErrorMessage(error),
+            metadata: serializeErrorMetadata(error),
           });
-
-          // todo: maybe close ws on error since nothing will happen after?
         }
       });
 
@@ -89,8 +88,8 @@ export class WebSocketSession {
           this.logger.error("Error uploading artifact:", error);
           this.send({
             message_type: "error_message",
-            error: String(error),
-            metadata: {},
+            error: getErrorMessage(error),
+            metadata: serializeErrorMetadata(error),
           });
         }
         break;
@@ -145,8 +144,8 @@ export class WebSocketSession {
       this.logger.error("Error in agent execution:", error);
       this.send({
         message_type: "error_message",
-        error: error instanceof Error ? error.message : JSON.stringify(error),
-        metadata: {},
+        error: getErrorMessage(error),
+        metadata: serializeErrorMetadata(error),
       });
     }
   }
