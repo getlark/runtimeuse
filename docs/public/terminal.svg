@@ -8,7 +8,7 @@
 
   <text font-family="ui-monospace, 'SF Mono', Menlo, Monaco, monospace" font-size="12">
     <tspan x="22" y="58" fill="#7aa2f7">$</tspan>
-    <tspan fill="#c0caf5"> npx -y runtimeuse --agent=claude</tspan>
+    <tspan fill="#c0caf5"> npx -y runtimeuse@latest --agent=claude</tspan>
   </text>
 
   <text font-family="ui-monospace, 'SF Mono', Menlo, Monaco, monospace" font-size="12">

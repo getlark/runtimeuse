@@ -12,13 +12,13 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
     ```bash
     npm install -g @anthropic-ai/claude-code
     export ANTHROPIC_API_KEY=your_anthropic_api_key
-    npx -y runtimeuse --agent claude
+    npx -y runtimeuse@latest --agent claude
     ```
 
     This starts the Claude Code agent on port `8080`. To use OpenAI agent instead:
     ```bash
     export OPENAI_API_KEY=your_openai_api_key
-    npx -y runtimeuse
+    npx -y runtimeuse@latest
     ```
 
     ```python
@@ -47,7 +47,7 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
                 "CLAUDE_SKIP_ROOT_CHECK": "1",
             }
         )
-        .set_start_cmd("npx -y runtimeuse --agent claude", wait_for_port(8080))
+        .set_start_cmd("npx -y runtimeuse@latest --agent claude", wait_for_port(8080))
     )
 
     sandbox = Sandbox.create(template="runtimeuse-quickstart-claude", api_key=e2b_api_key)
@@ -95,7 +95,7 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
     sandbox.process.execute_session_command(
         "runtimeuse",
         SessionExecuteRequest(
-            command="npx -y runtimeuse --agent claude",
+            command="npx -y runtimeuse@latest --agent claude",
             run_async=True,
         ),
     )

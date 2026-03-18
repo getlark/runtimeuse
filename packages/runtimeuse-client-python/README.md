@@ -30,7 +30,7 @@ WORKDIR = "/runtimeuse"
 async def main():
     # Start the runtime in a sandbox (provider-specific)
     sandbox = Sandbox.create()
-    sandbox.run("npx -y runtimeuse")
+    sandbox.run("npx -y runtimeuse@latest")
     ws_url = sandbox.get_url(8080)
 
     client = RuntimeUseClient(ws_url=ws_url)
@@ -173,27 +173,26 @@ except CancelledException:
 
 ### Types
 
-| Class                                     | Description                                            |
-| ----------------------------------------- | ------------------------------------------------------ |
-| `QueryOptions`                            | Configuration for `client.query()` (prompt options, callbacks, timeout) |
-| `QueryResult`                             | Return type of `query()` (`.data`, `.metadata`)        |
-| `ResultMessageInterface`                  | Wire-format result message from the runtime            |
-| `TextResult`                              | Result variant when no output schema is specified (`.text`) |
+| Class                                     | Description                                                              |
+| ----------------------------------------- | ------------------------------------------------------------------------ |
+| `QueryOptions`                            | Configuration for `client.query()` (prompt options, callbacks, timeout)  |
+| `QueryResult`                             | Return type of `query()` (`.data`, `.metadata`)                          |
+| `ResultMessageInterface`                  | Wire-format result message from the runtime                              |
+| `TextResult`                              | Result variant when no output schema is specified (`.text`)              |
 | `StructuredOutputResult`                  | Result variant when an output schema is specified (`.structured_output`) |
-
-| `AssistantMessageInterface`               | Intermediate assistant text messages                   |
-| `ArtifactUploadRequestMessageInterface`   | Runtime requesting a presigned URL for artifact upload |
-| `ArtifactUploadResponseMessageInterface`  | Response with presigned URL sent back to runtime       |
-| `ErrorMessageInterface`                   | Error from the agent runtime                           |
-| `CommandInterface`                        | Pre/post invocation shell command                      |
-| `RuntimeEnvironmentDownloadableInterface` | File to download into the runtime before invocation    |
+| `AssistantMessageInterface`               | Intermediate assistant text messages                                     |
+| `ArtifactUploadRequestMessageInterface`   | Runtime requesting a presigned URL for artifact upload                   |
+| `ArtifactUploadResponseMessageInterface`  | Response with presigned URL sent back to runtime                         |
+| `ErrorMessageInterface`                   | Error from the agent runtime                                             |
+| `CommandInterface`                        | Pre/post invocation shell command                                        |
+| `RuntimeEnvironmentDownloadableInterface` | File to download into the runtime before invocation                      |
 
 ### Exceptions
 
-| Class                | Description                                 |
-| -------------------- | ------------------------------------------- |
+| Class                | Description                                                                       |
+| -------------------- | --------------------------------------------------------------------------------- |
 | `AgentRuntimeError`  | Raised when the agent runtime returns an error (carries `.error` and `.metadata`) |
-| `CancelledException` | Raised when `client.abort()` is called during a query |
+| `CancelledException` | Raised when `client.abort()` is called during a query                             |
 
 ## Related Docs
 

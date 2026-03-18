@@ -8,10 +8,10 @@ The [agent runtime](https://www.npmjs.com/package/runtimeuse) is the process tha
 ## CLI
 
 ```bash
-npx -y runtimeuse                            # OpenAI handler on port 8080
-npx -y runtimeuse --agent claude             # Claude handler
-npx -y runtimeuse --port 3000                # custom port
-npx -y runtimeuse --handler ./my-handler.js  # custom handler entrypoint
+npx -y runtimeuse@latest                            # OpenAI handler on port 8080
+npx -y runtimeuse@latest --agent claude             # Claude handler
+npx -y runtimeuse@latest --port 3000                # custom port
+npx -y runtimeuse@latest --handler ./my-handler.js  # custom handler entrypoint
 ```
 
 ## Built-in Handlers
@@ -25,7 +25,7 @@ Requires `OPENAI_API_KEY` to be set in the environment. The handler runs the age
 
 ```bash
 export OPENAI_API_KEY=your_openai_api_key
-npx -y runtimeuse
+npx -y runtimeuse@latest
 ```
 
 ### Claude Handler
@@ -37,7 +37,7 @@ npm install -g @anthropic-ai/claude-code
 export ANTHROPIC_API_KEY=your_anthropic_api_key
 export IS_SANDBOX=1
 export CLAUDE_SKIP_ROOT_CHECK=1
-npx -y runtimeuse --agent claude
+npx -y runtimeuse@latest --agent claude
 ```
 
 ## Programmatic Startup

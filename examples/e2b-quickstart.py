@@ -38,7 +38,7 @@ def _get_env_or_fail(name: str) -> str:
 
 def _create_template_with_alias(alias: str):
     anthropic_api_key = _get_env_or_fail("ANTHROPIC_API_KEY")
-    start_cmd = "npx -y runtimeuse --agent claude"
+    start_cmd = "npx -y runtimeuse@latest --agent claude"
 
     template = (
         Template()

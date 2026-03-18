@@ -104,7 +104,7 @@ npm run build
 - LLM tests also create sandboxes by default and require `E2B_API_KEY` plus the relevant provider credentials such as `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
 - If you already have a runtime server running, set `TEST_WS_URL` to reuse it instead of creating a fresh sandbox.
 - Some LLM tests also require `TEST_S3_BUCKET` for artifact upload verification.
-- If you want sandbox tests to run against a dev build instead of `npx -y runtimeuse`, set `RUNTIMEUSE_RUN_COMMAND`. A convenient way to get that command is `packages/runtimeuse` -> `npm run dev-publish`.
+- If you want sandbox tests to run against a dev build instead of `npx -y runtimeuse@latest`, set `RUNTIMEUSE_RUN_COMMAND`. A convenient way to get that command is `packages/runtimeuse` -> `npm run dev-publish`.
 
 ## Docs Development
 

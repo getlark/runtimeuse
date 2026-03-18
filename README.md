@@ -15,7 +15,7 @@ Run AI agents inside sandboxes and communicate with them over WebSocket.
 
 ```bash
 export OPENAI_API_KEY=your_openai_api_key
-npx -y runtimeuse
+npx -y runtimeuse@latest
 ```
 
 This starts a WebSocket server on port 8080 using the default OpenAI handler. For fuller Claude-based sandbox examples, see [`examples/`](./examples).

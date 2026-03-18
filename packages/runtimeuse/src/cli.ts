@@ -21,16 +21,23 @@ Options:
   process.exit(0);
 }
 
-function parseArgs(args: string[]): Record<string, string> {
+export function parseArgs(
+  args: string[],
+  onHelp: () => never = usage,
+): Record<string, string> {
   const result: Record<string, string> = {};
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "-h" || arg === "--help") {
-      usage();
+      onHelp();
     }
-    if (arg.startsWith("--") && i + 1 < args.length) {
-      const key = arg.slice(2);
-      result[key] = args[++i];
+    if (arg.startsWith("--")) {
+      const eqIdx = arg.indexOf("=");
+      if (eqIdx !== -1) {
+        result[arg.slice(2, eqIdx)] = arg.slice(eqIdx + 1);
+      } else if (i + 1 < args.length) {
+        result[arg.slice(2)] = args[++i];
+      }
     }
   }
   return result;
@@ -60,8 +67,9 @@ function getBuiltinHandler(agent: BuiltinAgent): AgentHandler {
 async function loadHandler(handlerPath: string): Promise<AgentHandler> {
   const resolved = path.resolve(handlerPath);
   const mod = await import(resolved);
-  const handler: AgentHandler | undefined =
-    mod.default?.run ? mod.default : mod.handler;
+  const handler: AgentHandler | undefined = mod.default?.run
+    ? mod.default
+    : mod.handler;
 
   if (!handler?.run) {
     console.error(
@@ -99,7 +107,9 @@ async function main() {
   await server.startListening();
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (!process.env.VITEST) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
