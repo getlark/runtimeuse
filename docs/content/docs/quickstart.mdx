@@ -7,7 +7,7 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 ## 1. Start the Runtime
 
-<Tabs items={["Local", "Daytona", "E2B", "Vercel", "Modal"]}>
+<Tabs items={["Local", "E2B", "Daytona", "Vercel", "Modal"]}>
   <Tab>
     ```bash
     npm install -g @anthropic-ai/claude-code
@@ -24,6 +24,36 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
     ```python
     ws_url = "ws://localhost:8080"
     ```
+  </Tab>
+  <Tab>
+    ```bash
+    pip install e2b
+    ```
+
+    ```python
+    # Required env vars: E2B_API_KEY, ANTHROPIC_API_KEY
+    from e2b import Template, wait_for_port, Sandbox
+
+    template = (
+        Template()
+        .from_node_image("lts")
+        .set_workdir("/runtimeuse")
+        .npm_install(["@anthropic-ai/claude-code"], g=True)
+        .set_envs(
+            {
+                "ANTHROPIC_API_KEY": anthropic_api_key,
+                "IS_SANDBOX": "1",
+                "CLAUDE_SKIP_ROOT_CHECK": "1",
+            }
+        )
+        .set_start_cmd("npx -y runtimeuse@latest --agent claude", wait_for_port(8080))
+    )
+
+    sandbox = Sandbox.create(template="runtimeuse-quickstart-claude", api_key=e2b_api_key)
+    ws_url = f"wss://{sandbox.get_host(8080)}"
+    ```
+
+    Full example: [examples/e2b-quickstart.py](https://github.com/getlark/runtimeuse/blob/main/examples/e2b-quickstart.py)
   </Tab>
   <Tab>
     ```bash
@@ -74,36 +104,6 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
     ```
 
     Full example: [examples/daytona-quickstart.py](https://github.com/getlark/runtimeuse/blob/main/examples/daytona-quickstart.py)
-  </Tab>
-  <Tab>
-    ```bash
-    pip install e2b
-    ```
-
-    ```python
-    # Required env vars: E2B_API_KEY, ANTHROPIC_API_KEY
-    from e2b import Template, wait_for_port, Sandbox
-
-    template = (
-        Template()
-        .from_node_image("lts")
-        .set_workdir("/runtimeuse")
-        .npm_install(["@anthropic-ai/claude-code"], g=True)
-        .set_envs(
-            {
-                "ANTHROPIC_API_KEY": anthropic_api_key,
-                "IS_SANDBOX": "1",
-                "CLAUDE_SKIP_ROOT_CHECK": "1",
-            }
-        )
-        .set_start_cmd("npx -y runtimeuse@latest --agent claude", wait_for_port(8080))
-    )
-
-    sandbox = Sandbox.create(template="runtimeuse-quickstart-claude", api_key=e2b_api_key)
-    ws_url = f"wss://{sandbox.get_host(8080)}"
-    ```
-
-    Full example: [examples/e2b-quickstart.py](https://github.com/getlark/runtimeuse/blob/main/examples/e2b-quickstart.py)
   </Tab>
   <Tab>
     ```bash
