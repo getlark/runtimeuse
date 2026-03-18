@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Start the runtime, connect from Python, and run your first prompt.
+description: Start the runtime, connect from Python or TypeScript, and run your first prompt.
 ---
 
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
@@ -181,45 +181,86 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 ## 2. Install the Client
 
-```bash
-pip install runtimeuse-client
-```
+<Tabs items={["Python", "TypeScript"]}>
+  <Tab>
+    ```bash
+    pip install runtimeuse-client
+    ```
+  </Tab>
+  <Tab>
+    ```bash
+    npm install runtimeuse-client
+    ```
+  </Tab>
+</Tabs>
 
 ## 3. Connect and Query
 
 Once you have a `ws_url`, the client flow is the same across providers:
 
-```python
-import asyncio
+<Tabs items={["Python", "TypeScript"]}>
+  <Tab>
+    ```python
+    import asyncio
 
-from runtimeuse_client import (
-    QueryOptions,
-    RuntimeEnvironmentDownloadableInterface,
-    RuntimeUseClient,
-    TextResult,
-)
-
-
-async def main(ws_url: str) -> None:
-    client = RuntimeUseClient(ws_url=ws_url)
-
-    result = await client.query(
-        prompt="Summarize the contents of this repository and list your favorite file.",
-        options=QueryOptions(
-            system_prompt="You are a helpful assistant.",
-            model="claude-sonnet-4-20250514", # gpt-5.4 for openai
-            pre_agent_downloadables=[
-                RuntimeEnvironmentDownloadableInterface(
-                    download_url="https://github.com/openai/codex/archive/refs/heads/main.zip",
-                    working_dir="/runtimeuse",
-                )
-            ],
-        ),
+    from runtimeuse_client import (
+        QueryOptions,
+        RuntimeEnvironmentDownloadableInterface,
+        RuntimeUseClient,
+        TextResult,
     )
 
-    assert isinstance(result.data, TextResult)
-    print(result.data.text)
+
+    async def main(ws_url: str) -> None:
+        client = RuntimeUseClient(ws_url=ws_url)
+
+        result = await client.query(
+            prompt="Summarize the contents of this repository and list your favorite file.",
+            options=QueryOptions(
+                system_prompt="You are a helpful assistant.",
+                model="claude-sonnet-4-20250514", # gpt-5.4 for openai
+                pre_agent_downloadables=[
+                    RuntimeEnvironmentDownloadableInterface(
+                        download_url="https://github.com/openai/codex/archive/refs/heads/main.zip",
+                        working_dir="/runtimeuse",
+                    )
+                ],
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        print(result.data.text)
 
 
-asyncio.run(main(ws_url))
-```
+    asyncio.run(main(ws_url))
+    ```
+  </Tab>
+  <Tab>
+    ```typescript
+    import {
+      RuntimeUseClient,
+      type TextResult,
+    } from "runtimeuse-client";
+
+    const client = new RuntimeUseClient({ wsUrl: ws_url });
+
+    const result = await client.query(
+      "Summarize the contents of this repository and list your favorite file.",
+      {
+        system_prompt: "You are a helpful assistant.",
+        model: "claude-sonnet-4-20250514", // gpt-5.4 for openai
+        pre_agent_downloadables: [
+          {
+            download_url:
+              "https://github.com/openai/codex/archive/refs/heads/main.zip",
+            working_dir: "/runtimeuse",
+          },
+        ],
+      }
+    );
+
+    const data = result.data as TextResult;
+    console.log(data.text);
+    ```
+  </Tab>
+</Tabs>

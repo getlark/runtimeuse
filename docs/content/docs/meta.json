@@ -3,6 +3,7 @@
     "index",
     "quickstart",
     "python-client",
+    "typescript-client",
     "agent-runtime"
   ]
 }

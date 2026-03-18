@@ -1,0 +1,209 @@
+---
+title: TypeScript Client
+description: Connect to agent runtime in sandbox from TypeScript.
+---
+
+The [TypeScript client](https://www.npmjs.com/package/runtimeuse-client) is the control plane for RuntimeUse. It connects to the sandbox runtime, sends the invocation, and turns runtime messages into a single `QueryResult`.
+
+```bash
+npm install runtimeuse-client
+```
+
+## Basic Query
+
+```typescript
+import {
+  RuntimeUseClient,
+  type QueryOptions,
+  type TextResult,
+} from "runtimeuse-client";
+
+const client = new RuntimeUseClient({ wsUrl: "ws://localhost:8080" });
+
+const result = await client.query("What is 2 + 2", {
+  system_prompt: "You are a helpful assistant.",
+  model: "gpt-4.1",
+});
+
+const data = result.data as TextResult;
+console.log(data.text);
+console.log(result.metadata);
+```
+
+`query()` returns a `QueryResult` with:
+
+- `data`: either `TextResult` (`.text`) or `StructuredOutputResult` (`.structured_output`)
+- `metadata`: execution metadata returned by the runtime (includes token usage when available)
+
+## Return Structured JSON
+
+Pass `output_format_json_schema_str` when your application needs machine-readable output instead of free-form text. The result will be a `StructuredOutputResult`.
+
+```typescript
+import type { StructuredOutputResult } from "runtimeuse-client";
+
+interface RepoStats {
+  file_count: number;
+  char_count: number;
+}
+
+const schema = {
+  type: "json_schema",
+  schema: {
+    type: "object",
+    properties: {
+      file_count: { type: "number" },
+      char_count: { type: "number" },
+    },
+    required: ["file_count", "char_count"],
+  },
+};
+
+const result = await client.query(
+  "Inspect the repository and return the total file count and character count as JSON.",
+  {
+    system_prompt: "You are a helpful assistant.",
+    model: "gpt-4.1",
+    output_format_json_schema_str: JSON.stringify(schema),
+  }
+);
+
+const data = result.data as StructuredOutputResult;
+const stats = data.structured_output as RepoStats;
+console.log(stats);
+```
+
+## Download Files into the Sandbox
+
+Use `pre_agent_downloadables` to fetch a repository, zip archive, or any URL into the sandbox before the agent runs. This is the primary way to give the agent access to a codebase or dataset.
+
+```typescript
+import type { RuntimeEnvironmentDownloadable } from "runtimeuse-client";
+
+const result = await client.query(
+  "Summarize the contents of this repository and list your favorite file.",
+  {
+    system_prompt: "You are a helpful assistant.",
+    model: "gpt-4.1",
+    pre_agent_downloadables: [
+      {
+        download_url:
+          "https://github.com/openai/codex/archive/refs/heads/main.zip",
+        working_dir: "/runtimeuse",
+      },
+    ],
+  }
+);
+```
+
+The runtime downloads and extracts the file before handing control to the agent.
+
+## Upload Artifacts
+
+When the runtime requests an artifact upload, return a presigned URL and content type from `on_artifact_upload_request`. Set `artifacts_dir` to tell the runtime which sandbox directory contains the files to upload - both options must be provided together.
+
+```typescript
+import type {
+  ArtifactUploadRequestMessage,
+  ArtifactUploadResult,
+} from "runtimeuse-client";
+
+async function onArtifactUploadRequest(
+  request: ArtifactUploadRequestMessage
+): Promise<ArtifactUploadResult> {
+  const presignedUrl = await createPresignedUrl(request.filename);
+  return {
+    presigned_url: presignedUrl,
+    content_type: "application/octet-stream",
+  };
+}
+
+const result = await client.query(
+  "Generate a report and save it as report.txt.",
+  {
+    system_prompt: "You are a helpful assistant.",
+    model: "gpt-4.1",
+    artifacts_dir: "/runtimeuse/output",
+    on_artifact_upload_request: onArtifactUploadRequest,
+  }
+);
+```
+
+## Stream Assistant Messages
+
+Use `on_assistant_message` when you want intermediate progress while the run is still happening.
+
+```typescript
+import type { AssistantMessage } from "runtimeuse-client";
+
+async function onAssistantMessage(msg: AssistantMessage): Promise<void> {
+  for (const block of msg.text_blocks) {
+    console.log(`[assistant] ${block}`);
+  }
+}
+
+const result = await client.query("Inspect this repository.", {
+  system_prompt: "You are a helpful assistant.",
+  model: "gpt-4.1",
+  on_assistant_message: onAssistantMessage,
+});
+```
+
+## Cancel a Run
+
+Call `client.abort()` to cancel an in-flight query. The client sends a cancel message to the runtime and `query()` throws `CancelledException`.
+
+```typescript
+import { CancelledException } from "runtimeuse-client";
+
+setTimeout(() => client.abort(), 5000);
+
+try {
+  await client.query("Do the thing.", options);
+} catch (err) {
+  if (err instanceof CancelledException) {
+    console.log("Run was cancelled");
+  }
+}
+```
+
+## Set a Timeout
+
+Use `timeout` (in seconds) to limit how long a query can run. If the limit is exceeded, `query()` throws a `TimeoutError`.
+
+```typescript
+const result = await client.query("Do the thing.", {
+  system_prompt: "You are a helpful assistant.",
+  model: "gpt-4.1",
+  timeout: 120,
+});
+```
+
+## Redact Secrets
+
+Pass `secrets_to_redact` to strip sensitive strings from any output or logs that leave the sandbox.
+
+```typescript
+const result = await client.query("Check the API status.", {
+  system_prompt: "You are a helpful assistant.",
+  model: "gpt-4.1",
+  secrets_to_redact: ["sk-live-abc123", "my_db_password"],
+});
+```
+
+## Handle Errors
+
+`query()` throws `AgentRuntimeError` if the runtime sends back an error. The exception carries `.error` (the error message) and `.metadata`.
+
+```typescript
+import { AgentRuntimeError } from "runtimeuse-client";
+
+try {
+  const result = await client.query("Do the thing.", options);
+} catch (err) {
+  if (err instanceof AgentRuntimeError) {
+    console.log(`Runtime error: ${err.error}`);
+    console.log(`Metadata: ${JSON.stringify(err.metadata)}`);
+  }
+}
+```
