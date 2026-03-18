@@ -1,42 +1,157 @@
 ---
 title: Quickstart
-description: Get the runtime running in a sandbox and connect to it from Python.
+description: Start the runtime, connect from Python, and run your first prompt.
 ---
 
-## Step 1: Start the Runtime in a Sandbox
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
-Inside any sandbox that can run `npx` and expose a port:
+## 1. Start the Runtime
 
-```bash
-npx -y runtimeuse
-```
+<Tabs items={["Local", "E2B", "Daytona", "Vercel", "Modal"]}>
+  <Tab>
+    ```bash
+    export OPENAI_API_KEY=your_openai_api_key
+    npx -y runtimeuse
+    ```
 
-This starts a WebSocket server on port 8080 using the OpenAI agent handler by default.
+    This starts the OpenAI agent on port `8080`. To use Claude instead:
 
-To use Claude instead:
+    ```bash
+    npm install -g @anthropic-ai/claude-code
+    export ANTHROPIC_API_KEY=your_anthropic_api_key
+    npx -y runtimeuse --agent claude
+    ```
 
-```bash
-npx -y runtimeuse --agent claude
-```
+    ```python
+    ws_url = "ws://localhost:8080"
+    ```
+  </Tab>
+  <Tab>
+    ```bash
+    pip install e2b e2b-code-interpreter
+    ```
 
-The Claude handler requires the `claude` CLI to be installed in the sandbox, for example with:
+    ```python
+    # Required env vars: E2B_API_KEY, ANTHROPIC_API_KEY
+    from e2b import Template, wait_for_port
+    from e2b_code_interpreter import Sandbox
 
-```bash
-npm install -g @anthropic-ai/claude-code
-```
+    template = (
+        Template()
+        .from_node_image("lts")
+        .set_workdir("/runtimeuse")
+        .npm_install(["@anthropic-ai/claude-code"], g=True)
+        .set_envs(
+            {
+                "ANTHROPIC_API_KEY": anthropic_api_key,
+                "IS_SANDBOX": "1",
+                "CLAUDE_SKIP_ROOT_CHECK": "1",
+            }
+        )
+        .set_start_cmd("npx -y runtimeuse --agent claude", wait_for_port(8080))
+    )
 
-## Step 2: Install the Python Client
+    sandbox = Sandbox.create(template="runtimeuse-quickstart-claude", api_key=e2b_api_key)
+    ws_url = f"wss://{sandbox.get_host(8080)}"
+    ```
+
+    Full example: [examples/e2b-quickstart.py](https://github.com/getlark/runtimeuse/blob/main/examples/e2b-quickstart.py)
+  </Tab>
+  <Tab>
+    ```bash
+    pip install daytona
+    ```
+
+    ```python
+    # Required env vars: DAYTONA_API_KEY, ANTHROPIC_API_KEY
+    from daytona import SessionExecuteRequest
+
+    sandbox.process.create_session("runtimeuse")
+    sandbox.process.execute_session_command(
+        "runtimeuse",
+        SessionExecuteRequest(
+            command="npx -y runtimeuse --agent claude",
+            run_async=True,
+        ),
+    )
+
+    preview = sandbox.create_signed_preview_url(8080, expires_in_seconds=3600)
+    ws_url = _http_to_ws(preview.url)
+    ```
+
+    Full example: [examples/daytona-quickstart.py](https://github.com/getlark/runtimeuse/blob/main/examples/daytona-quickstart.py)
+  </Tab>
+  <Tab>
+    ```bash
+    pip install vercel python-dotenv
+    ```
+
+    ```python
+    # Required env vars: VERCEL_TOKEN, VERCEL_PROJECT_ID, VERCEL_TEAM_ID, ANTHROPIC_API_KEY
+    from vercel.sandbox import Sandbox
+
+    sandbox = Sandbox.create(
+        runtime="node24",
+        ports=[8081],
+        env={
+            "ANTHROPIC_API_KEY": anthropic_api_key,
+            "IS_SANDBOX": "1",
+            "CLAUDE_SKIP_ROOT_CHECK": "1",
+        },
+    )
+
+    sandbox.run_command("sudo", ["dnf", "install", "-y", "unzip"])
+    sandbox.run_command("npm", ["install", "-g", "@anthropic-ai/claude-code"])
+    sandbox.run_command_detached(
+        "npx",
+        ["-y", "runtimeuse", "--agent", "claude", "--port", "8081"],
+    )
+
+    ws_url = _http_to_ws(sandbox.domain(8081))
+    ```
+
+    Full example: [examples/vercel-quickstart.py](https://github.com/getlark/runtimeuse/blob/main/examples/vercel-quickstart.py)
+  </Tab>
+  <Tab>
+    ```bash
+    pip install modal
+    ```
+
+    ```python
+    # Required env vars: ANTHROPIC_API_KEY
+    # Authenticate with Modal: `modal token set` or set MODAL_TOKEN_ID + MODAL_TOKEN_SECRET
+    import modal
+
+    sandbox = modal.Sandbox.create(
+        app=app,
+        image=image,
+        secrets=[secret],
+        workdir="/runtimeuse",
+        encrypted_ports=[8080],
+        timeout=600,
+    )
+
+    sandbox.exec("npx", "-y", "runtimeuse", "--agent", "claude")
+    ws_url = _http_to_ws(sandbox.tunnels()[8080].url)
+    ```
+
+    Full example: [examples/modal-quickstart.py](https://github.com/getlark/runtimeuse/blob/main/examples/modal-quickstart.py)
+  </Tab>
+</Tabs>
+
+## 2. Install the Client
 
 ```bash
 pip install runtimeuse-client
 ```
 
-## Step 3: Connect from Python
+## 3. Connect and Query
 
-For local development, connect directly to the runtime's WebSocket URL:
+Once you have a `ws_url`, the client flow is the same across providers:
 
 ```python
 import asyncio
+
 from runtimeuse_client import (
     QueryOptions,
     RuntimeEnvironmentDownloadableInterface,
@@ -44,20 +159,19 @@ from runtimeuse_client import (
     TextResult,
 )
 
-WORKDIR = "/runtimeuse"
 
-async def main():
-    client = RuntimeUseClient(ws_url="ws://localhost:8080")
+async def main(ws_url: str) -> None:
+    client = RuntimeUseClient(ws_url=ws_url)
 
     result = await client.query(
-        prompt="Summarize the contents of the codex repository and list your favorite file in the repository.",
+        prompt="Summarize the contents of this repository and list your favorite file.",
         options=QueryOptions(
             system_prompt="You are a helpful assistant.",
-            model="gpt-4.1",
+            model="claude-sonnet-4-20250514",
             pre_agent_downloadables=[
                 RuntimeEnvironmentDownloadableInterface(
                     download_url="https://github.com/openai/codex/archive/refs/heads/main.zip",
-                    working_dir=WORKDIR,
+                    working_dir="/runtimeuse",
                 )
             ],
         ),
@@ -66,69 +180,6 @@ async def main():
     assert isinstance(result.data, TextResult)
     print(result.data.text)
 
-asyncio.run(main())
+
+asyncio.run(main(ws_url))
 ```
-
-## Step 4: Use a Sandbox URL in Production-Like Flows
-
-In a real sandbox integration, your sandbox provider gives you the runtime URL after starting the process inside the sandbox. The Python client then connects from outside the sandbox:
-
-```python
-import asyncio
-import json
-
-from pydantic import BaseModel
-
-from runtimeuse_client import (
-    QueryOptions,
-    RuntimeEnvironmentDownloadableInterface,
-    RuntimeUseClient,
-    StructuredOutputResult,
-)
-
-WORKDIR = "/runtimeuse"
-
-
-class RepoStats(BaseModel):
-    file_count: int
-    char_count: int
-
-async def main():
-    # Pseudocode: start the runtime inside your sandbox provider
-    sandbox = Sandbox.create()
-    sandbox.run("npx -y runtimeuse")
-    ws_url = sandbox.get_url(8080)
-
-    client = RuntimeUseClient(ws_url=ws_url)
-
-    result = await client.query(
-        prompt="Inspect the codex repository and return the total file count and total character count across all files as JSON.",
-        options=QueryOptions(
-            system_prompt="You are a helpful assistant.",
-            model="gpt-4.1",
-            pre_agent_downloadables=[
-                RuntimeEnvironmentDownloadableInterface(
-                    download_url="https://github.com/openai/codex/archive/refs/heads/main.zip",
-                    working_dir=WORKDIR,
-                )
-            ],
-            output_format_json_schema_str=json.dumps(
-                {
-                    "type": "json_schema",
-                    "schema": RepoStats.model_json_schema(),
-                }
-            ),
-        ),
-    )
-
-    assert isinstance(result.data, StructuredOutputResult)
-    stats = RepoStats.model_validate(result.data.structured_output)
-    print(stats.model_dump())
-
-asyncio.run(main())
-```
-
-## Next Steps
-
-- See the [runtime package README](https://github.com/getlark/runtimeuse/tree/main/packages/runtimeuse) for runtime configuration and custom handlers.
-- See the [Python client README](https://github.com/getlark/runtimeuse/tree/main/packages/runtimeuse-client-python) for structured output, artifact uploads, and cancellation.

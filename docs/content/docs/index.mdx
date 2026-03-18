@@ -1,43 +1,34 @@
 ---
 title: Introduction
-description: Run AI agents in sandboxes and communicate with them over WebSocket.
+description: Run AI agents (Claude Code, OpenAI Agents, and more) in any sandbox, controlled from Python over WebSocket.
 ---
 
-## What is RuntimeUse?
+[RuntimeUse](https://github.com/getlark/runtimeuse) is an open-source runtime and client library for running AI agents inside isolated sandboxes and controlling them from Python over WebSocket.
 
-RuntimeUse lets you run an AI agent inside any sandbox and communicate with it over WebSocket. It handles the runtime lifecycle for you: file downloads, pre-commands, artifact uploads, cancellation, and structured results.
 
-It is made up of two parts:
+<img src="/terminal.svg" alt="RuntimeUse terminal" style={{ maxWidth: '560px', width: '100%' }} />
 
-1. **`runtimeuse`**: the TypeScript runtime that runs inside the sandbox and exposes a WebSocket server.
-2. **`runtimeuse-client`**: the Python client that connects from outside the sandbox and sends invocations.
 
-Today, the recommended path is to run the runtime in the sandbox and use the Python client from your application code.
+<Card
+    title="Quickstart"
+    description="See how to integrate with popular sandbox providers."
+    href="/quickstart"
+  />
 
-## Built-in Agent Handlers
 
-The runtime ships with two built-in handlers:
+## Why RuntimeUse
 
-- **`openai`** (default) — uses `@openai/agents` SDK
-- **`claude`** — uses `@anthropic-ai/claude-agent-sdk` with Claude Code tools and `bypassPermissions` mode
+- Your agent needs filesystem, CLI, or network access inside an isolated runtime.
+- Your application should stay outside the sandbox while still controlling the run.
+- You don't want to build infrastructure for interacting with your agent in sandbox.
 
-Switch between them with `--agent openai` or `--agent claude`.
+## Features
 
-The Claude handler also requires the `claude` CLI to be installed in the sandbox, for example:
+- **Task invocations**: send a prompt to any agent runtime and receive a result over WebSocket as text or typed JSON.
+- **pre_agent_downloadables**: fetch code, repos, or data into the sandbox before the run starts.
+- **Pre-commands**: run bash commands before the agent starts executing.
+- **Artifact uploads**: move generated files out of the sandbox with a presigned URL handshake.
+- **Streaming and cancellation**: receive progress updates and stop runs cleanly.
+- **Secret-aware execution**: redact sensitive values before they leave the sandbox.
 
-```bash
-npm install -g @anthropic-ai/claude-code
-```
 
-## Key Features
-
-- **Sandbox-agnostic** — works with any provider that can run `npx` and expose a port
-- **Artifact management** — files written to the artifacts directory are automatically detected and uploaded through a presigned URL handshake with the client
-- **Secret redaction** — secret values are recursively replaced before they leave the sandbox
-- **Pre-commands** — run shell commands before agent invocation with automatic secret redaction and abort support
-
-<Cards>
-  <Card title="Quickstart" href="/docs/quickstart" />
-  <Card title="Runtime Package" href="https://github.com/getlark/runtimeuse/tree/main/packages/runtimeuse" />
-  <Card title="Python Client" href="https://github.com/getlark/runtimeuse/tree/main/packages/runtimeuse-client-python" />
-</Cards>

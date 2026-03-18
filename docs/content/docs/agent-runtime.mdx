@@ -1,0 +1,123 @@
+---
+title: Agent Runtime
+description: CLI flags, built-in agent handlers, and custom handler authoring for the runtimeuse server.
+---
+
+The [agent runtime](https://www.npmjs.com/package/runtimeuse) is the process that runs inside the sandbox. It exposes a WebSocket server, receives invocations from the Python client, and delegates work to an agent handler.
+
+## CLI
+
+```bash
+npx -y runtimeuse                            # OpenAI handler on port 8080
+npx -y runtimeuse --agent claude             # Claude handler
+npx -y runtimeuse --port 3000                # custom port
+npx -y runtimeuse --handler ./my-handler.js  # custom handler entrypoint
+```
+
+## Built-in Handlers
+
+- `openai`: the default handler, uses the [OpenAI Agents SDK](https://openai.github.io/openai-agents-js/) with shell and web search tools.
+- `claude`: uses [Claude Agents SDK](https://platform.claude.com/docs/en/agent-sdk/overview) with Claude Code preset.
+
+### OpenAI Handler
+
+Requires `OPENAI_API_KEY` to be set in the environment. The handler runs the agent with shell access and web search enabled.
+
+```bash
+export OPENAI_API_KEY=your_openai_api_key
+npx -y runtimeuse
+```
+
+### Claude Handler
+
+Requires the `@anthropic-ai/claude-code` CLI and `ANTHROPIC_API_KEY`. Always set `IS_SANDBOX=1` and `CLAUDE_SKIP_ROOT_CHECK=1` in the sandbox environment.
+
+```bash
+npm install -g @anthropic-ai/claude-code
+export ANTHROPIC_API_KEY=your_anthropic_api_key
+export IS_SANDBOX=1
+export CLAUDE_SKIP_ROOT_CHECK=1
+npx -y runtimeuse --agent claude
+```
+
+## Programmatic Startup
+
+If you want to embed RuntimeUse directly in your own Node process, start it programmatically:
+
+```typescript
+import { RuntimeUseServer, openaiHandler } from "runtimeuse";
+
+const server = new RuntimeUseServer({
+  handler: openaiHandler,
+  port: 8080,
+});
+
+await server.startListening();
+```
+
+## Custom Handlers
+
+When the built-in handlers are not enough, you can pass your own handler to `RuntimeUseServer`:
+
+```typescript
+import { RuntimeUseServer } from "runtimeuse";
+import type {
+  AgentHandler,
+  AgentInvocation,
+  AgentResult,
+  MessageSender,
+} from "runtimeuse";
+
+const handler: AgentHandler = {
+  async run(
+    invocation: AgentInvocation,
+    sender: MessageSender,
+  ): Promise<AgentResult> {
+    sender.sendAssistantMessage(["Running agent..."]);
+
+    const output = await myAgent(
+      invocation.systemPrompt,
+      invocation.userPrompt,
+    );
+
+    return {
+      type: "structured_output",
+      structuredOutput: output,
+      metadata: { duration_ms: 1500 },
+    };
+  },
+};
+
+const server = new RuntimeUseServer({ handler, port: 8080 });
+await server.startListening();
+```
+
+### Handler Contracts
+
+Your handler receives an `AgentInvocation` with:
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `systemPrompt` | `string` | System prompt for the agent. |
+| `userPrompt` | `string` | User prompt sent from the Python client. |
+| `model` | `string` | Model name passed by the client. |
+| `outputFormat` | `{ type: "json_schema"; schema: ... } \| undefined` | Present when the client requests structured output. Pass to your agent to enforce the schema. |
+| `signal` | `AbortSignal` | Fires when the client sends a cancel message. Pass to any async operations that support cancellation. |
+| `logger` | `Logger` | Use `invocation.logger.log(msg)` to emit log lines visible in sandbox logs. |
+
+Use `MessageSender` to stream intermediate output before returning the final result:
+
+- `sendAssistantMessage(textBlocks: string[])`: emit text blocks the Python client receives via `on_assistant_message`.
+- `sendErrorMessage(error: string, metadata?: Record<string, unknown>)`: signal a non-fatal error before aborting.
+
+Return an `AgentResult` from your handler:
+
+```typescript
+// Text result
+return { type: "text", text: "...", metadata: { duration_ms: 100 } };
+
+// Structured output result
+return { type: "structured_output", structuredOutput: { file_count: 42 }, metadata: {} };
+```
+
+`metadata` is optional and is passed through to `result.metadata` on the Python side.

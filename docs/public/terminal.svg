@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 200" fill="none">
+  <rect width="540" height="200" rx="14" fill="#1a1b26"/>
+  <rect width="540" height="36" rx="14" fill="#24283b"/>
+  <rect y="24" width="540" height="12" fill="#24283b"/>
+  <circle cx="22" cy="18" r="5" fill="#f7768e"/>
+  <circle cx="38" cy="18" r="5" fill="#e0af68"/>
+  <circle cx="54" cy="18" r="5" fill="#9ece6a"/>
+
+  <text font-family="ui-monospace, 'SF Mono', Menlo, Monaco, monospace" font-size="12">
+    <tspan x="22" y="58" fill="#7aa2f7">$</tspan>
+    <tspan fill="#c0caf5"> npx -y runtimeuse --agent=claude</tspan>
+  </text>
+
+  <text font-family="ui-monospace, 'SF Mono', Menlo, Monaco, monospace" font-size="12">
+    <tspan x="22" y="76" fill="#565f89">›</tspan>
+    <tspan fill="#9ece6a"> ws://localhost:8080</tspan>
+  </text>
+
+  <text font-family="ui-monospace, 'SF Mono', Menlo, Monaco, monospace" font-size="12">
+    <tspan x="22" y="94" fill="#565f89">›</tspan>
+    <tspan fill="#a9b1d6"> connected to client</tspan>
+  </text>
+
+  <text font-family="ui-monospace, 'SF Mono', Menlo, Monaco, monospace" font-size="12">
+    <tspan x="22" y="112" fill="#565f89">›</tspan>
+    <tspan fill="#a9b1d6"> received invocation message</tspan>
+  </text>
+
+  <text font-family="ui-monospace, 'SF Mono', Menlo, Monaco, monospace" font-size="12">
+    <tspan x="22" y="130" fill="#565f89">›</tspan>
+    <tspan fill="#e0af68"> spawning claude agent</tspan>
+  </text>
+
+  <text font-family="ui-monospace, 'SF Mono', Menlo, Monaco, monospace" font-size="12">
+    <tspan x="22" y="148" fill="#565f89">›</tspan>
+    <tspan fill="#a9b1d6"> received agent message, forwarding to client</tspan>
+  </text>
+
+  <text font-family="ui-monospace, 'SF Mono', Menlo, Monaco, monospace" font-size="12">
+    <tspan x="22" y="166" fill="#565f89">›</tspan>
+    <tspan fill="#9ece6a"> received result, forwarding to client</tspan>
+  </text>
+
+  <text font-family="ui-monospace, 'SF Mono', Menlo, Monaco, monospace" font-size="12">
+    <tspan x="22" y="184" fill="#565f89">›</tspan>
+    <tspan fill="#565f89"> agent runtime finished...</tspan>
+  </text>
+</svg>

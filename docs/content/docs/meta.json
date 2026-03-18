@@ -1,0 +1,8 @@
+{
+  "pages": [
+    "index",
+    "quickstart",
+    "python-client",
+    "agent-runtime"
+  ]
+}
