@@ -16,7 +16,7 @@ Run the runtime inside any sandbox:
 
 ```bash
 export OPENAI_API_KEY=your_openai_api_key
-npx -y runtimeuse
+npx -y runtimeuse@latest
 ```
 
 This starts a WebSocket server on port 8080 using the OpenAI agent handler (default). You can choose between built-in handlers:
@@ -27,8 +27,8 @@ This starts a WebSocket server on port 8080 using the OpenAI agent handler (defa
 The Claude handler requires the `claude` CLI to be installed in the sandbox environment.
 
 ```bash
-npx -y runtimeuse                    # OpenAI (default)
-npx -y runtimeuse --agent claude     # Claude
+npx -y runtimeuse@latest                    # OpenAI (default)
+npx -y runtimeuse@latest --agent claude     # Claude
 ```
 
 Use it programmatically:
@@ -113,7 +113,11 @@ sender.sendErrorMessage("Something went wrong", { code: "TIMEOUT" });
 ```typescript
 type AgentResult =
   | { type: "text"; text: string; metadata?: Record<string, unknown> }
-  | { type: "structured_output"; structuredOutput: Record<string, unknown>; metadata?: Record<string, unknown> };
+  | {
+      type: "structured_output";
+      structuredOutput: Record<string, unknown>;
+      metadata?: Record<string, unknown>;
+    };
 ```
 
 ## Server Options

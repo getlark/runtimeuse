@@ -10,7 +10,7 @@ from e2b_code_interpreter import Sandbox
 
 _logger = logging.getLogger(__name__)
 
-_DEFAULT_RUN_COMMAND = "npx -y runtimeuse@latest"
+_DEFAULT_RUN_COMMAND = "npx -y runtimeuse@latest@latest"
 
 
 def _get_env_or_fail(name: str) -> str:

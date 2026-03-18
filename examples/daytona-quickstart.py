@@ -102,7 +102,7 @@ async def _start_server_and_wait(sandbox: Sandbox) -> str:
     exec_resp = sandbox.process.execute_session_command(
         _SESSION_ID,
         SessionExecuteRequest(
-            command=f"npx -y runtimeuse --agent claude",
+            command=f"npx -y runtimeuse@latest --agent claude",
             run_async=True,
         ),
     )
