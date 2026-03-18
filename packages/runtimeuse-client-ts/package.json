@@ -1,0 +1,45 @@
+{
+  "name": "runtimeuse-client",
+  "version": "0.6.0",
+  "description": "TypeScript client for communicating with a runtimeuse agent runtime",
+  "license": "FSL",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getlark/runtimeuse.git",
+    "directory": "packages/runtimeuse-client-ts"
+  },
+  "homepage": "https://github.com/getlark/runtimeuse",
+  "bugs": "https://github.com/getlark/runtimeuse/issues",
+  "keywords": [
+    "ai",
+    "agent",
+    "runtime",
+    "websocket",
+    "client",
+    "runtimeuse"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.18"
+  }
+}
