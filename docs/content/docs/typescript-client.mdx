@@ -40,36 +40,29 @@ console.log(result.metadata);
 Pass `output_format_json_schema_str` when your application needs machine-readable output instead of free-form text. The result will be a `StructuredOutputResult`.
 
 ```typescript
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import type { StructuredOutputResult } from "runtimeuse-client";
 
-interface RepoStats {
-  file_count: number;
-  char_count: number;
-}
-
-const schema = {
-  type: "json_schema",
-  schema: {
-    type: "object",
-    properties: {
-      file_count: { type: "number" },
-      char_count: { type: "number" },
-    },
-    required: ["file_count", "char_count"],
-  },
-};
+const RepoStats = z.object({
+  file_count: z.number(),
+  char_count: z.number(),
+});
 
 const result = await client.query(
   "Inspect the repository and return the total file count and character count as JSON.",
   {
     system_prompt: "You are a helpful assistant.",
     model: "gpt-4.1",
-    output_format_json_schema_str: JSON.stringify(schema),
+    output_format_json_schema_str: JSON.stringify({
+      type: "json_schema",
+      schema: zodToJsonSchema(RepoStats),
+    }),
   }
 );
 
 const data = result.data as StructuredOutputResult;
-const stats = data.structured_output as RepoStats;
+const stats = RepoStats.parse(data.structured_output);
 console.log(stats);
 ```
 
