@@ -42,7 +42,6 @@ from runtimeuse_client import (
     StructuredOutputResult,
 )
 
-WORKDIR = "/vercel/sandbox"
 _SERVER_READY_SIGNAL = "RuntimeUse server listening on port"
 
 
@@ -129,7 +128,7 @@ async def _run_query(ws_url: str) -> None:
             pre_agent_downloadables=[
                 RuntimeEnvironmentDownloadableInterface(
                     download_url="https://github.com/openai/codex/archive/refs/heads/main.zip",
-                    working_dir=WORKDIR,
+                    working_dir=".",
                 )
             ],
             output_format_json_schema_str=json.dumps(

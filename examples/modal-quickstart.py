@@ -33,7 +33,6 @@ from runtimeuse_client import (
     TextResult,
 )
 
-WORKDIR = "/runtimeuse"
 _SERVER_READY_SIGNAL = "RuntimeUse server listening on port"
 _SERVER_STARTUP_TIMEOUT_S = 120
 
@@ -130,7 +129,6 @@ def create_sandbox() -> tuple[modal.Sandbox, str]:
             app=app,
             image=image,
             secrets=[secret],
-            workdir=WORKDIR,
             encrypted_ports=[8080],
             timeout=600,
         )
@@ -176,7 +174,7 @@ async def _run_query(ws_url: str) -> None:
             pre_agent_downloadables=[
                 RuntimeEnvironmentDownloadableInterface(
                     download_url="https://github.com/openai/codex/archive/refs/heads/main.zip",
-                    working_dir=WORKDIR,
+                    working_dir=".",
                 )
             ],
         ),

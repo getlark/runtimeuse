@@ -10,16 +10,15 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 <Tabs items={["Local", "E2B", "Daytona", "Vercel", "Modal"]}>
   <Tab>
     ```bash
-    export OPENAI_API_KEY=your_openai_api_key
-    npx -y runtimeuse
-    ```
-
-    This starts the OpenAI agent on port `8080`. To use Claude instead:
-
-    ```bash
     npm install -g @anthropic-ai/claude-code
     export ANTHROPIC_API_KEY=your_anthropic_api_key
     npx -y runtimeuse --agent claude
+    ```
+
+    This starts the Claude Code agent on port `8080`. To use OpenAI agent instead:
+    ```bash
+    export OPENAI_API_KEY=your_openai_api_key
+    npx -y runtimeuse
     ```
 
     ```python
@@ -64,7 +63,33 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
     ```python
     # Required env vars: DAYTONA_API_KEY, ANTHROPIC_API_KEY
-    from daytona import SessionExecuteRequest
+    from daytona import (
+        CreateSandboxFromImageParams,
+        Daytona,
+        DaytonaConfig,
+        Image,
+        SessionExecuteRequest,
+    )
+
+    image = Image.base("node:lts").run_commands(
+        "apt-get update && apt-get install -y unzip",
+        "npm install -g @anthropic-ai/claude-code",
+    )
+
+    daytona = Daytona(config=DaytonaConfig(api_key=daytona_api_key))
+
+    sandbox = daytona.create(
+        CreateSandboxFromImageParams(
+            image=image,
+            env_vars={
+                "ANTHROPIC_API_KEY": anthropic_api_key,
+                "IS_SANDBOX": "1",
+                "CLAUDE_SKIP_ROOT_CHECK": "1",
+            },
+            public=True,
+        ),
+        timeout=600,
+    )
 
     sandbox.process.create_session("runtimeuse")
     sandbox.process.execute_session_command(
@@ -122,6 +147,21 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
     # Authenticate with Modal: `modal token set` or set MODAL_TOKEN_ID + MODAL_TOKEN_SECRET
     import modal
 
+    app = modal.App.lookup("runtimeuse-quickstart", create_if_missing=True)
+
+    image = modal.Image.from_registry("node:lts").run_commands(
+        "apt-get update && apt-get install -y unzip",
+        "npm install -g @anthropic-ai/claude-code",
+    )
+
+    secret = modal.Secret.from_dict(
+        {
+            "ANTHROPIC_API_KEY": anthropic_api_key,
+            "IS_SANDBOX": "1",
+            "CLAUDE_SKIP_ROOT_CHECK": "1",
+        }
+    )
+
     sandbox = modal.Sandbox.create(
         app=app,
         image=image,
@@ -167,7 +207,7 @@ async def main(ws_url: str) -> None:
         prompt="Summarize the contents of this repository and list your favorite file.",
         options=QueryOptions(
             system_prompt="You are a helpful assistant.",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-20250514", # gpt-5.4 for openai
             pre_agent_downloadables=[
                 RuntimeEnvironmentDownloadableInterface(
                     download_url="https://github.com/openai/codex/archive/refs/heads/main.zip",

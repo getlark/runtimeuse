@@ -28,8 +28,6 @@ from runtimeuse_client import (
     TextResult,
 )
 
-WORKDIR = "/runtimeuse"
-
 
 def _get_env_or_fail(name: str) -> str:
     value = os.environ.get(name)
@@ -45,7 +43,6 @@ def _create_template_with_alias(alias: str):
     template = (
         Template()
         .from_node_image("lts")
-        .set_workdir(WORKDIR)
         .npm_install(["@anthropic-ai/claude-code"], g=True)
         .set_envs(
             {
@@ -107,7 +104,7 @@ async def main() -> None:
                 pre_agent_downloadables=[
                     RuntimeEnvironmentDownloadableInterface(
                         download_url="https://github.com/openai/codex/archive/refs/heads/main.zip",
-                        working_dir=WORKDIR,
+                        working_dir=".",
                     )
                 ],
             ),
