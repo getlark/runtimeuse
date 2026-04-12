@@ -175,6 +175,10 @@ When a client sends an `invocation_message`, the session:
 4. **Sends `result_message`** -- the `AgentResult` from your handler is sent back to the client
 5. **Finalizes** -- stops artifact watching, waits for pending uploads, closes the WebSocket
 
+### Command-Only Execution
+
+The session also accepts a `command_execution_message` instead of an `invocation_message`. This runs `pre_execution_downloadables` and the provided commands, streams output as `assistant_message`s, and returns a `command_execution_result_message` with per-command exit codes -- without invoking the agent handler. See the [Python client docs](../runtimeuse-client-python/README.md#command-only-execution) for usage.
+
 ## Artifact Management
 
 Files written to the artifacts directory are automatically detected via `chokidar` file watching and uploaded through a presigned URL handshake with the client. The artifacts directory is specified per-invocation via the `artifacts_dir` field in the `InvocationMessage`.
@@ -222,13 +226,15 @@ Command output (stdout/stderr) from pre-commands is automatically redacted using
 
 | Type                            | Direction         | Description                             |
 | ------------------------------- | ----------------- | --------------------------------------- |
-| `InvocationMessage`             | Client -> Runtime | Start an agent invocation               |
-| `CancelMessage`                 | Client -> Runtime | Cancel a running invocation             |
-| `ArtifactUploadResponseMessage` | Client -> Runtime | Presigned URL for artifact upload       |
-| `ResultMessage`                 | Runtime -> Client | Structured agent result                 |
-| `AssistantMessage`              | Runtime -> Client | Intermediate text from the agent        |
-| `ArtifactUploadRequestMessage`  | Runtime -> Client | Request a presigned URL for an artifact |
-| `ErrorMessage`                  | Runtime -> Client | Error during execution                  |
+| `InvocationMessage`               | Client -> Runtime | Start an agent invocation                  |
+| `CommandExecutionMessage`         | Client -> Runtime | Run commands without agent invocation       |
+| `CancelMessage`                   | Client -> Runtime | Cancel a running invocation or execution    |
+| `ArtifactUploadResponseMessage`   | Client -> Runtime | Presigned URL for artifact upload           |
+| `ResultMessage`                   | Runtime -> Client | Structured agent result                     |
+| `CommandExecutionResultMessage`   | Runtime -> Client | Per-command exit codes                      |
+| `AssistantMessage`                | Runtime -> Client | Intermediate text from the agent            |
+| `ArtifactUploadRequestMessage`    | Runtime -> Client | Request a presigned URL for an artifact     |
+| `ErrorMessage`                    | Runtime -> Client | Error during execution                      |
 
 ## Related Docs
 

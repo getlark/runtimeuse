@@ -130,6 +130,36 @@ elif isinstance(result.data, StructuredOutputResult):
 print(result.metadata)  # execution metadata
 ```
 
+### Command-Only Execution
+
+Use `execute_commands()` when you need to run shell commands in the sandbox without invoking the agent. This is useful for setup steps, health checks, or any workflow where you only need command exit codes.
+
+```python
+from runtimeuse_client import (
+    CommandInterface,
+    ExecuteCommandsOptions,
+    RuntimeUseClient,
+)
+
+client = RuntimeUseClient(ws_url="ws://localhost:8080")
+
+result = await client.execute_commands(
+    commands=[
+        CommandInterface(command="mkdir -p /app/output"),
+        CommandInterface(command="echo 'sandbox is ready' > /app/output/status.txt"),
+        CommandInterface(command="cat /app/output/status.txt"),
+    ],
+    options=ExecuteCommandsOptions(
+        on_assistant_message=on_assistant,  # optional -- streams stdout/stderr
+    ),
+)
+
+for item in result.results:
+    print(f"{item.command} -> exit code {item.exit_code}")
+```
+
+`execute_commands()` supports the same streaming, cancellation, timeout, secret redaction, artifact upload, and error semantics as `query()`. If any command exits non-zero, `AgentRuntimeError` is raised.
+
 ### Artifact Upload Handshake
 
 When the agent runtime requests an artifact upload, provide a callback that returns a presigned URL and content type. The client sends the response back automatically.
@@ -184,7 +214,10 @@ except CancelledException:
 | `ArtifactUploadRequestMessageInterface`   | Runtime requesting a presigned URL for artifact upload                   |
 | `ArtifactUploadResponseMessageInterface`  | Response with presigned URL sent back to runtime                         |
 | `ErrorMessageInterface`                   | Error from the agent runtime                                             |
-| `CommandInterface`                        | Pre/post invocation shell command                                        |
+| `ExecuteCommandsOptions`                  | Configuration for `client.execute_commands()` (callbacks, timeout)        |
+| `CommandExecutionResult`                  | Return type of `execute_commands()` (`.results`)                         |
+| `CommandResultItem`                       | Per-command result (`.command`, `.exit_code`)                            |
+| `CommandInterface`                        | Shell command to execute (`.command`, `.cwd`)                            |
 | `RuntimeEnvironmentDownloadableInterface` | File to download into the runtime before invocation                      |
 
 ### Exceptions
