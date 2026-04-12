@@ -3,7 +3,7 @@ import { WebSocket } from "ws";
 import type { AgentHandler } from "./agent-handler.js";
 import { ArtifactManager } from "./artifact-manager.js";
 import type { UploadTracker } from "./upload-tracker.js";
-import type { InvocationMessage, IncomingMessage, OutgoingMessage } from "./types.js";
+import type { InvocationMessage, CommandExecutionMessage, IncomingMessage, OutgoingMessage } from "./types.js";
 import { getErrorMessage, serializeErrorMetadata } from "./error-utils.js";
 import { redactSecrets, sleep } from "./utils.js";
 import { createLogger, createRedactingLogger, defaultLogger, type Logger } from "./logger.js";
@@ -72,7 +72,8 @@ export class WebSocketSession {
   ): Promise<void> {
     if (
       !this.invocationReceived &&
-      message.message_type !== "invocation_message"
+      message.message_type !== "invocation_message" &&
+      message.message_type !== "command_execution_message"
     ) {
       throw new Error(
         "Received non-invocation message before invocation message! Received: " +
@@ -114,6 +115,21 @@ export class WebSocketSession {
         await this.finalize();
         resolve();
         break;
+
+      case "command_execution_message":
+        if (this.invocationReceived) {
+          throw new Error("Received multiple invocation messages!");
+        }
+        this.invocationReceived = true;
+        await this.executeCommandsOnly(message);
+        const hasCommandArtifacts = this.artifactManager !== null;
+        if (process.env.NODE_ENV !== "test" || hasCommandArtifacts) {
+          this.logger.log("Waiting for post-invocation delay...");
+          await sleep(this.config.postInvocationDelayMs ?? 3_000);
+        }
+        await this.finalize();
+        resolve();
+        break;
     }
   }
 
@@ -142,6 +158,39 @@ export class WebSocketSession {
         return;
       }
       this.logger.error("Error in agent execution:", error);
+      this.send({
+        message_type: "error_message",
+        error: getErrorMessage(error),
+        metadata: serializeErrorMetadata(error),
+      });
+    }
+  }
+
+  private async executeCommandsOnly(message: CommandExecutionMessage): Promise<void> {
+    const sourceId = message.source_id ?? crypto.randomUUID();
+    this.secrets = message.secrets_to_redact ?? [];
+    this.logger = createRedactingLogger(createLogger(sourceId), this.secrets);
+    this.config.uploadTracker.setLogger(this.logger);
+    this.logger.log("Received command execution request");
+
+    this.initArtifactManager(message.artifacts_dir);
+
+    const runner = new InvocationRunner({
+      handler: this.config.handler,
+      logger: this.logger,
+      abortController: this.abortController,
+      send: (msg) => this.send(msg),
+    });
+
+    try {
+      await runner.runCommandsOnly(message);
+    } catch (error) {
+      if (this.abortController.signal.aborted) {
+        this.ws.close();
+        this.logger.log("Command execution aborted.");
+        return;
+      }
+      this.logger.error("Error in command execution:", error);
       this.send({
         message_type: "error_message",
         error: getErrorMessage(error),

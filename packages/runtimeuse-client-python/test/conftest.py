@@ -4,7 +4,7 @@ from typing import Any, AsyncGenerator
 import dotenv
 import pytest
 
-from src.runtimeuse_client import RuntimeUseClient, QueryOptions
+from src.runtimeuse_client import RuntimeUseClient, QueryOptions, ExecuteCommandsOptions
 
 dotenv.load_dotenv()
 
@@ -75,3 +75,13 @@ def query_options():
 def make_query_options():
     """Return the _make_query_options factory for tests that need custom fields."""
     return _make_query_options
+
+
+def _make_execute_commands_options(**overrides: Any) -> ExecuteCommandsOptions:
+    return ExecuteCommandsOptions(**overrides)
+
+
+@pytest.fixture
+def make_execute_commands_options():
+    """Return the _make_execute_commands_options factory for tests."""
+    return _make_execute_commands_options

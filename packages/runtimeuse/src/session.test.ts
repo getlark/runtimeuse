@@ -440,6 +440,97 @@ describe("WebSocketSession", () => {
     });
   });
 
+  describe("command execution message", () => {
+    const COMMAND_EXEC_MSG = {
+      message_type: "command_execution_message" as const,
+      source_id: "test-source-id",
+      secrets_to_redact: ["secret123"],
+      commands: [{ command: "echo hello", cwd: "/app" }],
+    };
+
+    it("resolves when command execution finishes", async () => {
+      mockCommandExecute.mockResolvedValueOnce({ exitCode: 0 });
+      const { session, ws } = createSession();
+      const done = session.run();
+      sendMessage(ws, COMMAND_EXEC_MSG);
+      await done;
+    });
+
+    it("sends command_execution_result_message on success", async () => {
+      mockCommandExecute.mockResolvedValueOnce({ exitCode: 0 });
+      const { session, ws } = createSession();
+      const done = session.run();
+      sendMessage(ws, COMMAND_EXEC_MSG);
+      await done;
+
+      const sent = parseSentMessages(ws);
+      const result = sent.find(
+        (m) => m.message_type === "command_execution_result_message",
+      );
+      expect(result).toBeDefined();
+      expect(result!.results).toEqual([
+        { command: "echo hello", exit_code: 0 },
+      ]);
+    });
+
+    it("does not invoke the agent handler", async () => {
+      mockCommandExecute.mockResolvedValueOnce({ exitCode: 0 });
+      const { session, ws } = createSession();
+      const done = session.run();
+      sendMessage(ws, COMMAND_EXEC_MSG);
+      await done;
+
+      expect(mockHandlerRun).not.toHaveBeenCalled();
+    });
+
+    it("sends error when command fails", async () => {
+      mockCommandExecute.mockResolvedValueOnce({ exitCode: 1 });
+      const { session, ws } = createSession();
+      const done = session.run();
+      sendMessage(ws, COMMAND_EXEC_MSG);
+      await done;
+
+      expectSentError(ws, "command failed with exit code: 1");
+    });
+
+    it("rejects duplicate command execution messages", async () => {
+      let resolveCmd!: () => void;
+      mockCommandExecute.mockImplementation(
+        () =>
+          new Promise((r) => {
+            resolveCmd = () => r({ exitCode: 0 });
+          }),
+      );
+
+      const { session, ws } = createSession();
+      session.run();
+
+      sendMessage(ws, COMMAND_EXEC_MSG);
+      await tick();
+      sendMessage(ws, COMMAND_EXEC_MSG);
+      await tick();
+
+      expectSentError(ws, "multiple invocation messages");
+
+      resolveCmd();
+    });
+
+    it("redacts secrets from command output", async () => {
+      mockCommandExecute.mockImplementation(async function (this: any) {
+        return { exitCode: 0 };
+      });
+      const { session, ws } = createSession();
+      const done = session.run();
+      sendMessage(ws, COMMAND_EXEC_MSG);
+      await done;
+
+      const sent = parseSentMessages(ws);
+      for (const msg of sent) {
+        expect(JSON.stringify(msg)).not.toContain("secret123");
+      }
+    });
+  });
+
   describe("pre-agent invocation commands", () => {
     it("continues to agent when pre-agent command exits with 0", async () => {
       mockCommandExecute.mockResolvedValueOnce({ exitCode: 0 });
