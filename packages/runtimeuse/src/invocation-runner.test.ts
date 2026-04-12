@@ -6,7 +6,7 @@ import type {
   MessageSender,
 } from "./agent-handler.js";
 import type { Logger } from "./logger.js";
-import type { InvocationMessage, OutgoingMessage } from "./types.js";
+import type { InvocationMessage, CommandExecutionMessage, OutgoingMessage } from "./types.js";
 import CommandHandler from "./command-handler.js";
 import { InvocationRunner } from "./invocation-runner.js";
 
@@ -301,5 +301,139 @@ describe("InvocationRunner", () => {
     await runner.run(message);
 
     expect(CommandHandler).toHaveBeenCalledTimes(3);
+  });
+});
+
+const BASE_COMMAND_EXECUTION_MESSAGE: CommandExecutionMessage = {
+  message_type: "command_execution_message",
+  source_id: "source-id",
+  secrets_to_redact: ["api-key"],
+  commands: [{ command: "echo hello", cwd: "/app" }],
+};
+
+function createCommandRunner(overrides?: Partial<CommandExecutionMessage>) {
+  const logger: Logger = {
+    log: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  };
+  const abortController = new AbortController();
+  const send = vi.fn<(msg: OutgoingMessage) => void>();
+  const handler: AgentHandler = { run: mockHandlerRun };
+  const runner = new InvocationRunner({
+    handler,
+    logger,
+    abortController,
+    send,
+  });
+
+  return {
+    runner,
+    logger,
+    send,
+    abortController,
+    message: { ...BASE_COMMAND_EXECUTION_MESSAGE, ...overrides },
+  };
+}
+
+describe("InvocationRunner.runCommandsOnly", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDownload.mockResolvedValue(undefined);
+    mockExecute.mockResolvedValue({ exitCode: 0 });
+  });
+
+  it("sends command_execution_result_message on success", async () => {
+    const { runner, message, send } = createCommandRunner();
+
+    await runner.runCommandsOnly(message);
+
+    expect(send).toHaveBeenCalledWith({
+      message_type: "command_execution_result_message",
+      results: [{ command: "echo hello", exit_code: 0 }],
+    });
+    expect(mockHandlerRun).not.toHaveBeenCalled();
+  });
+
+  it("collects results for multiple commands", async () => {
+    const { runner, message, send } = createCommandRunner({
+      commands: [
+        { command: "echo 1", cwd: "/app" },
+        { command: "echo 2", cwd: "/app" },
+      ],
+    });
+
+    await runner.runCommandsOnly(message);
+
+    expect(send).toHaveBeenCalledWith({
+      message_type: "command_execution_result_message",
+      results: [
+        { command: "echo 1", exit_code: 0 },
+        { command: "echo 2", exit_code: 0 },
+      ],
+    });
+  });
+
+  it("forwards stdout and stderr through assistant messages", async () => {
+    mockExecute.mockImplementation(async (options) => {
+      options.onStdout?.("stdout data");
+      options.onStderr?.("stderr data");
+      return { exitCode: 0 };
+    });
+
+    const { runner, message, send } = createCommandRunner();
+
+    await runner.runCommandsOnly(message);
+
+    expect(send).toHaveBeenCalledWith({
+      message_type: "assistant_message",
+      text_blocks: ["stdout data"],
+    });
+    expect(send).toHaveBeenCalledWith({
+      message_type: "assistant_message",
+      text_blocks: ["stderr data"],
+    });
+  });
+
+  it("sends error message and throws when command exits non-zero", async () => {
+    mockExecute.mockResolvedValueOnce({ exitCode: 2 });
+    const { runner, message, send, logger } = createCommandRunner();
+
+    await expect(runner.runCommandsOnly(message)).rejects.toThrow(
+      "command failed with exit code: 2",
+    );
+
+    expect(logger.error).toHaveBeenCalledWith(
+      "command failed with exit code: 2",
+    );
+    expect(send).toHaveBeenCalledWith({
+      message_type: "error_message",
+      error: "command failed with exit code: 2",
+      metadata: {},
+    });
+  });
+
+  it("downloads runtime environment before running commands", async () => {
+    const events: string[] = [];
+    mockDownload.mockImplementation(async () => {
+      events.push("download");
+    });
+    mockExecute.mockImplementation(async (options) => {
+      events.push(`command:${options.command.command}`);
+      return { exitCode: 0 };
+    });
+
+    const { runner, message } = createCommandRunner({
+      pre_execution_downloadables: [
+        {
+          download_url: "https://example.com/runtime.tar.gz",
+          working_dir: "/tmp",
+        },
+      ],
+    });
+
+    await runner.runCommandsOnly(message);
+
+    expect(events).toEqual(["download", "command:echo hello"]);
   });
 });

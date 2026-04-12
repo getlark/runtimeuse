@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from src.runtimeuse_client import RuntimeUseClient, QueryOptions
+from src.runtimeuse_client import RuntimeUseClient, QueryOptions, ExecuteCommandsOptions
 
 E2E_PORT = 8089
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -89,6 +89,15 @@ def query_options() -> QueryOptions:
 @pytest.fixture
 def make_query_options():
     return _make_query_options
+
+
+def _make_execute_commands_options(**overrides: Any) -> ExecuteCommandsOptions:
+    return ExecuteCommandsOptions(**overrides)
+
+
+@pytest.fixture
+def make_execute_commands_options():
+    return _make_execute_commands_options
 
 
 @pytest.fixture

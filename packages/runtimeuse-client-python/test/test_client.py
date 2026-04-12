@@ -7,7 +7,10 @@ from test.conftest import DEFAULT_PROMPT
 from src.runtimeuse_client import (
     RuntimeUseClient,
     QueryOptions,
+    ExecuteCommandsOptions,
     QueryResult,
+    CommandExecutionResult,
+    CommandResultItem,
     TextResult,
     StructuredOutputResult,
     AssistantMessageInterface,
@@ -15,6 +18,7 @@ from src.runtimeuse_client import (
     ArtifactUploadResult,
     AgentRuntimeError,
     CancelledException,
+    CommandInterface,
 )
 
 
@@ -467,3 +471,184 @@ class TestConstructor:
         )
         assert opts.artifacts_dir == "/tmp/artifacts"
         assert opts.on_artifact_upload_request is _dummy_cb
+
+
+# ---------------------------------------------------------------------------
+# execute_commands
+# ---------------------------------------------------------------------------
+
+COMMAND_RESULT_MSG = {
+    "message_type": "command_execution_result_message",
+    "results": [{"command": "echo hello", "exit_code": 0}],
+}
+
+
+class TestExecuteCommands:
+    @pytest.mark.asyncio
+    async def test_returns_command_execution_result(
+        self, fake_transport, make_execute_commands_options
+    ):
+        transport, client = fake_transport([COMMAND_RESULT_MSG])
+
+        result = await client.execute_commands(
+            commands=[CommandInterface(command="echo hello")],
+            options=make_execute_commands_options(),
+        )
+
+        assert isinstance(result, CommandExecutionResult)
+        assert len(result.results) == 1
+        assert result.results[0].command == "echo hello"
+        assert result.results[0].exit_code == 0
+
+    @pytest.mark.asyncio
+    async def test_sends_command_execution_message(
+        self, fake_transport, make_execute_commands_options
+    ):
+        transport, client = fake_transport([COMMAND_RESULT_MSG])
+
+        await client.execute_commands(
+            commands=[CommandInterface(command="echo hello")],
+            options=make_execute_commands_options(source_id="cmd-test"),
+        )
+
+        cmd_msgs = [
+            m
+            for m in transport.sent
+            if m.get("message_type") == "command_execution_message"
+        ]
+        assert len(cmd_msgs) == 1
+        assert cmd_msgs[0]["source_id"] == "cmd-test"
+        assert cmd_msgs[0]["commands"] == [{"command": "echo hello", "cwd": None}]
+
+    @pytest.mark.asyncio
+    async def test_assistant_message_dispatched(
+        self, fake_transport, make_execute_commands_options
+    ):
+        assistant_msg = {
+            "message_type": "assistant_message",
+            "text_blocks": ["output line"],
+        }
+        transport, client = fake_transport([assistant_msg, COMMAND_RESULT_MSG])
+        on_assistant = AsyncMock()
+
+        await client.execute_commands(
+            commands=[CommandInterface(command="echo hello")],
+            options=make_execute_commands_options(on_assistant_message=on_assistant),
+        )
+
+        on_assistant.assert_awaited_once()
+        received = on_assistant.call_args[0][0]
+        assert isinstance(received, AssistantMessageInterface)
+        assert received.text_blocks == ["output line"]
+
+    @pytest.mark.asyncio
+    async def test_error_message_raises(
+        self, fake_transport, make_execute_commands_options
+    ):
+        error_msg = {
+            "message_type": "error_message",
+            "error": "command failed with exit code: 1",
+            "metadata": {},
+        }
+        transport, client = fake_transport([error_msg])
+
+        with pytest.raises(AgentRuntimeError, match="command failed"):
+            await client.execute_commands(
+                commands=[CommandInterface(command="exit 1")],
+                options=make_execute_commands_options(),
+            )
+
+    @pytest.mark.asyncio
+    async def test_no_result_raises(
+        self, fake_transport, make_execute_commands_options
+    ):
+        transport, client = fake_transport([])
+
+        with pytest.raises(AgentRuntimeError, match="No result message received"):
+            await client.execute_commands(
+                commands=[CommandInterface(command="echo hello")],
+                options=make_execute_commands_options(),
+            )
+
+    @pytest.mark.asyncio
+    async def test_abort_raises_cancelled(
+        self, fake_transport, make_execute_commands_options
+    ):
+        filler_msg = {
+            "message_type": "assistant_message",
+            "text_blocks": ["working..."],
+        }
+        transport, client = fake_transport([filler_msg, filler_msg])
+
+        async def abort_on_first_message(_msg):
+            client.abort()
+
+        with pytest.raises(CancelledException):
+            await client.execute_commands(
+                commands=[CommandInterface(command="echo hello")],
+                options=make_execute_commands_options(
+                    on_assistant_message=abort_on_first_message
+                ),
+            )
+
+    @pytest.mark.asyncio
+    async def test_timeout_raises(self, make_execute_commands_options):
+        async def stalling_transport(send_queue: asyncio.Queue[dict]):
+            await asyncio.sleep(10)
+            yield {}
+
+        client = RuntimeUseClient(transport=stalling_transport)
+
+        with pytest.raises(TimeoutError):
+            await client.execute_commands(
+                commands=[CommandInterface(command="echo hello")],
+                options=make_execute_commands_options(timeout=0.05),
+            )
+
+    @pytest.mark.asyncio
+    async def test_artifact_upload_handshake(
+        self, fake_transport, make_execute_commands_options
+    ):
+        upload_request = {
+            "message_type": "artifact_upload_request_message",
+            "filename": "output.txt",
+            "filepath": "/tmp/output.txt",
+        }
+        transport, client = fake_transport([upload_request, COMMAND_RESULT_MSG])
+
+        async def on_artifact(
+            req: ArtifactUploadRequestMessageInterface,
+        ) -> ArtifactUploadResult:
+            return ArtifactUploadResult(
+                presigned_url="https://s3.example.com/presigned",
+                content_type="text/plain",
+            )
+
+        await client.execute_commands(
+            commands=[CommandInterface(command="echo hello")],
+            options=make_execute_commands_options(
+                artifacts_dir="/tmp/artifacts",
+                on_artifact_upload_request=on_artifact,
+            ),
+        )
+
+        response_msgs = [
+            m
+            for m in transport.sent
+            if m.get("message_type") == "artifact_upload_response_message"
+        ]
+        assert len(response_msgs) == 1
+        assert response_msgs[0]["filename"] == "output.txt"
+        assert response_msgs[0]["presigned_url"] == "https://s3.example.com/presigned"
+
+    def test_execute_commands_options_artifacts_validation(self):
+        with pytest.raises(ValueError, match="must be specified together"):
+            ExecuteCommandsOptions(artifacts_dir="/tmp/artifacts")
+
+        async def _dummy_cb(req):
+            return ArtifactUploadResult(
+                presigned_url="https://example.com", content_type="text/plain"
+            )
+
+        with pytest.raises(ValueError, match="must be specified together"):
+            ExecuteCommandsOptions(on_artifact_upload_request=_dummy_cb)

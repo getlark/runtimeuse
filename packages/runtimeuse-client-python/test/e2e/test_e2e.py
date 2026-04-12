@@ -10,7 +10,10 @@ import pytest
 from src.runtimeuse_client import (
     RuntimeUseClient,
     QueryOptions,
+    ExecuteCommandsOptions,
     QueryResult,
+    CommandExecutionResult,
+    CommandResultItem,
     TextResult,
     StructuredOutputResult,
     AssistantMessageInterface,
@@ -596,3 +599,143 @@ class TestSecretsRedaction:
 
         assert "super-secret-value" not in str(exc_info.value)
         assert "[REDACTED]" in str(exc_info.value)
+
+
+class TestExecuteCommands:
+    """Tests for RuntimeUseClient.execute_commands."""
+
+    async def test_single_command_success(
+        self, client: RuntimeUseClient, make_execute_commands_options
+    ):
+        result = await client.execute_commands(
+            commands=[CommandInterface(command="echo hello")],
+            options=make_execute_commands_options(timeout=10),
+        )
+
+        assert isinstance(result, CommandExecutionResult)
+        assert len(result.results) == 1
+        assert result.results[0].command == "echo hello"
+        assert result.results[0].exit_code == 0
+
+    async def test_multiple_commands_success(
+        self, client: RuntimeUseClient, make_execute_commands_options
+    ):
+        result = await client.execute_commands(
+            commands=[
+                CommandInterface(command="echo first"),
+                CommandInterface(command="echo second"),
+            ],
+            options=make_execute_commands_options(timeout=10),
+        )
+
+        assert len(result.results) == 2
+        assert result.results[0].command == "echo first"
+        assert result.results[0].exit_code == 0
+        assert result.results[1].command == "echo second"
+        assert result.results[1].exit_code == 0
+
+    async def test_command_output_streamed_via_callback(
+        self, client: RuntimeUseClient, make_execute_commands_options
+    ):
+        received: list[AssistantMessageInterface] = []
+
+        async def on_msg(msg: AssistantMessageInterface):
+            received.append(msg)
+
+        await client.execute_commands(
+            commands=[CommandInterface(command="echo streamed-sentinel")],
+            options=make_execute_commands_options(
+                on_assistant_message=on_msg, timeout=10
+            ),
+        )
+
+        all_text = [block for msg in received for block in msg.text_blocks]
+        assert any("streamed-sentinel" in t for t in all_text)
+
+    async def test_failed_command_raises_error(
+        self, client: RuntimeUseClient, make_execute_commands_options
+    ):
+        with pytest.raises(AgentRuntimeError, match="command failed with exit code"):
+            await client.execute_commands(
+                commands=[CommandInterface(command="exit 1")],
+                options=make_execute_commands_options(timeout=10),
+            )
+
+    async def test_agent_handler_not_invoked(
+        self, client: RuntimeUseClient, make_execute_commands_options
+    ):
+        result = await client.execute_commands(
+            commands=[CommandInterface(command="echo no-agent")],
+            options=make_execute_commands_options(timeout=10),
+        )
+
+        assert isinstance(result, CommandExecutionResult)
+        assert len(result.results) == 1
+
+    async def test_command_with_cwd(
+        self, client: RuntimeUseClient, make_execute_commands_options
+    ):
+        received: list[AssistantMessageInterface] = []
+
+        async def on_msg(msg: AssistantMessageInterface):
+            received.append(msg)
+
+        await client.execute_commands(
+            commands=[CommandInterface(command="pwd", cwd="/tmp")],
+            options=make_execute_commands_options(
+                on_assistant_message=on_msg, timeout=10
+            ),
+        )
+
+        all_text = [block for msg in received for block in msg.text_blocks]
+        assert any("/tmp" in t for t in all_text)
+
+    async def test_secrets_redacted_from_output(
+        self, client: RuntimeUseClient, make_execute_commands_options
+    ):
+        received: list[AssistantMessageInterface] = []
+
+        async def on_msg(msg: AssistantMessageInterface):
+            received.append(msg)
+
+        await client.execute_commands(
+            commands=[CommandInterface(command="echo my-secret-token")],
+            options=make_execute_commands_options(
+                secrets_to_redact=["my-secret-token"],
+                on_assistant_message=on_msg,
+                timeout=10,
+            ),
+        )
+
+        all_text = [block for msg in received for block in msg.text_blocks]
+        assert not any("my-secret-token" in t for t in all_text)
+        assert any("[REDACTED]" in t for t in all_text)
+
+    async def test_cancellation(
+        self, ws_url: str, make_execute_commands_options
+    ):
+        client = RuntimeUseClient(ws_url=ws_url)
+
+        async def abort_on_first(msg: AssistantMessageInterface):
+            client.abort()
+
+        with pytest.raises((CancelledException, TimeoutError)):
+            await client.execute_commands(
+                commands=[
+                    CommandInterface(
+                        command="for i in $(seq 1 100); do echo line$i; sleep 0.1; done"
+                    ),
+                ],
+                options=make_execute_commands_options(
+                    on_assistant_message=abort_on_first, timeout=5
+                ),
+            )
+
+    async def test_timeout(
+        self, client: RuntimeUseClient, make_execute_commands_options
+    ):
+        with pytest.raises(TimeoutError):
+            await client.execute_commands(
+                commands=[CommandInterface(command="sleep 30")],
+                options=make_execute_commands_options(timeout=0.5),
+            )

@@ -12,6 +12,7 @@ class AgentRuntimeMessageInterface(BaseModel):
         "assistant_message",
         "artifact_upload_request_message",
         "error_message",
+        "command_execution_result_message",
     ]
 
 
@@ -99,6 +100,33 @@ class CancelMessage(BaseModel):
     message_type: Literal["cancel_message"]
 
 
+class CommandExecutionMessage(BaseModel):
+    message_type: Literal["command_execution_message"]
+    source_id: str | None = None
+    secrets_to_redact: list[str] = Field(default_factory=list)
+    commands: list[CommandInterface]
+    artifacts_dir: str | None = None
+    pre_execution_downloadables: list[RuntimeEnvironmentDownloadableInterface] | None = None
+
+
+class CommandResultItem(BaseModel):
+    command: str
+    exit_code: int
+
+
+class CommandExecutionResult(BaseModel):
+    """Result returned by :meth:`RuntimeUseClient.execute_commands`."""
+
+    results: list[CommandResultItem]
+
+
+class CommandExecutionResultMessageInterface(AgentRuntimeMessageInterface):
+    """Wire-format result message from command-only execution."""
+
+    message_type: Literal["command_execution_result_message"]
+    results: list[CommandResultItem]
+
+
 class ArtifactUploadResult(BaseModel):
     presigned_url: str
     content_type: str
@@ -145,6 +173,36 @@ class QueryOptions:
     #: Called when the runtime requests an artifact upload URL.
     on_artifact_upload_request: OnArtifactUploadRequestCallback | None = None
     #: Overall timeout in seconds for the query. ``None`` means no limit.
+    timeout: float | None = None
+    #: Logger instance; falls back to the module-level logger when ``None``.
+    logger: logging.Logger | None = None
+
+    def __post_init__(self) -> None:
+        has_dir = self.artifacts_dir is not None
+        has_cb = self.on_artifact_upload_request is not None
+        if has_dir != has_cb:
+            raise ValueError(
+                "artifacts_dir and on_artifact_upload_request must be specified together"
+            )
+
+
+@dataclass
+class ExecuteCommandsOptions:
+    """Options for :meth:`RuntimeUseClient.execute_commands`."""
+
+    #: Secret values to redact from command output.
+    secrets_to_redact: list[str] = field(default_factory=list)
+    #: Caller-defined identifier for tracing/logging purposes.
+    source_id: str | None = None
+    #: Directory inside the runtime environment where artifacts are written.
+    artifacts_dir: str | None = None
+    #: Files to download into the runtime environment before commands run.
+    pre_execution_downloadables: list[RuntimeEnvironmentDownloadableInterface] | None = None
+    #: Called for each assistant (intermediate) message streamed back.
+    on_assistant_message: OnAssistantMessageCallback | None = None
+    #: Called when the runtime requests an artifact upload URL.
+    on_artifact_upload_request: OnArtifactUploadRequestCallback | None = None
+    #: Overall timeout in seconds. ``None`` means no limit.
     timeout: float | None = None
     #: Logger instance; falls back to the module-level logger when ``None``.
     logger: logging.Logger | None = None

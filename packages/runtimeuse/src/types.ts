@@ -22,6 +22,25 @@ interface InvocationMessage {
   pre_agent_downloadables?: RuntimeEnvironmentDownloadable[];
 }
 
+interface CommandExecutionMessage {
+  message_type: "command_execution_message";
+  source_id?: string;
+  secrets_to_redact: string[];
+  commands: Command[];
+  artifacts_dir?: string;
+  pre_execution_downloadables?: RuntimeEnvironmentDownloadable[];
+}
+
+interface CommandExecutionResultItem {
+  command: string;
+  exit_code: number;
+}
+
+interface CommandExecutionResultMessage {
+  message_type: "command_execution_result_message";
+  results: CommandExecutionResultItem[];
+}
+
 interface CancelMessage {
   message_type: "cancel_message";
 }
@@ -64,10 +83,12 @@ type OutgoingMessage =
   | ResultMessage
   | AssistantMessage
   | ArtifactUploadRequestMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | CommandExecutionResultMessage;
 
 type IncomingMessage =
   | InvocationMessage
+  | CommandExecutionMessage
   | ArtifactUploadResponseMessage
   | CancelMessage;
 
@@ -75,6 +96,9 @@ export type {
   IncomingMessage,
   OutgoingMessage,
   InvocationMessage,
+  CommandExecutionMessage,
+  CommandExecutionResultMessage,
+  CommandExecutionResultItem,
   CancelMessage,
   ResultMessage,
   AssistantMessage,
