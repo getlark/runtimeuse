@@ -5,6 +5,7 @@ import type {
   CommandExecutionResultItem,
   OutgoingMessage,
   RuntimeEnvironmentDownloadable,
+  Command,
 } from "./types.js";
 import type { Logger } from "./logger.js";
 import CommandHandler from "./command-handler.js";
@@ -30,7 +31,11 @@ export class InvocationRunner {
     const { handler, logger, abortController, send } = this.config;
 
     await this.downloadRuntimeEnvironment(message.pre_agent_downloadables);
-    await this.runCommands(message.pre_agent_invocation_commands, "pre-agent", message.secrets_to_redact);
+    await this.runCommands(
+      message.pre_agent_invocation_commands,
+      "pre-agent",
+      message.secrets_to_redact,
+    );
 
     const sender = this.createSender();
     const outputFormat = message.output_format_json_schema_str
@@ -82,19 +87,26 @@ export class InvocationRunner {
 
     const results: CommandExecutionResultItem[] = [];
     for (const command of message.commands) {
-      await this.runCommandAndCollect(command, message.secrets_to_redact, results);
+      await this.runCommandAndCollect(
+        command,
+        message.secrets_to_redact,
+        results,
+      );
     }
 
     const resultMessage: OutgoingMessage = {
       message_type: "command_execution_result_message",
       results,
     };
-    logger.log("Sending command execution result:", JSON.stringify(resultMessage));
+    logger.log(
+      "Sending command execution result:",
+      JSON.stringify(resultMessage),
+    );
     send(resultMessage);
   }
 
   private async runCommandAndCollect(
-    command: { command: string; cwd?: string },
+    command: Command,
     secrets: string[],
     results: CommandExecutionResultItem[],
   ): Promise<void> {
