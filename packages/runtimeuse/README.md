@@ -91,15 +91,16 @@ interface AgentHandler {
 
 **`AgentInvocation`** -- everything your agent needs:
 
-| Field          | Type                                                       | Description                          |
-| -------------- | ---------------------------------------------------------- | ------------------------------------ |
-| `systemPrompt` | `string`                                                   | System prompt for the agent          |
-| `userPrompt`   | `string`                                                   | User prompt / task description       |
-| `outputFormat` | `{ type: "json_schema"; schema: Record<string, unknown> }` | Expected output schema               |
-| `model`        | `string`                                                   | Model identifier                     |
-| `secrets`      | `string[]`                                                 | Values to redact from logs           |
-| `signal`       | `AbortSignal`                                              | Observe for cancellation (read-only) |
-| `logger`       | `Logger`                                                   | Prefixed logger for this invocation  |
+| Field          | Type                                                       | Description                                |
+| -------------- | ---------------------------------------------------------- | ------------------------------------------ |
+| `systemPrompt` | `string`                                                   | System prompt for the agent                |
+| `userPrompt`   | `string`                                                   | User prompt / task description             |
+| `outputFormat` | `{ type: "json_schema"; schema: Record<string, unknown> }` | Expected output schema                     |
+| `model`        | `string`                                                   | Model identifier                           |
+| `env`          | `Record<string, string>` (optional)                        | Environment variables to pass to the agent |
+| `secrets`      | `string[]`                                                 | Values to redact from logs                 |
+| `signal`       | `AbortSignal`                                              | Observe for cancellation (read-only)       |
+| `logger`       | `Logger`                                                   | Prefixed logger for this invocation        |
 
 **`MessageSender`** -- send intermediate messages back to the client:
 
@@ -170,14 +171,21 @@ wss.on("connection", (ws) => {
 When a client sends an `invocation_message`, the session:
 
 1. **Downloads runtime files** -- if `pre_agent_downloadables` is set, fetches and extracts them
-2. **Runs pre-commands** -- if `pre_agent_invocation_commands` is set, executes them. If it exits 0, execution continues to the next command or the agent. Any other non-zero exit code sends an error message and terminates the invocation.
-3. **Calls `handler.run()`** -- your agent logic runs with the invocation context and a `MessageSender`
+2. **Runs pre-commands** -- if `pre_agent_invocation_commands` is set, executes them. Each command can specify its own `env` and `cwd`. If it exits 0, execution continues to the next command or the agent. Any other non-zero exit code sends an error message and terminates the invocation.
+3. **Calls `handler.run()`** -- your agent logic runs with the invocation context (including any `agent_env` environment variables) and a `MessageSender`
 4. **Sends `result_message`** -- the `AgentResult` from your handler is sent back to the client
 5. **Finalizes** -- stops artifact watching, waits for pending uploads, closes the WebSocket
 
-### Command-Only Execution
+### Command-Only Execution (no agent)
 
-The session also accepts a `command_execution_message` instead of an `invocation_message`. This runs `pre_execution_downloadables` and the provided commands, streams output as `assistant_message`s, and returns a `command_execution_result_message` with per-command exit codes -- without invoking the agent handler. See the [Python client docs](../runtimeuse-client-python/README.md#command-only-execution) for usage.
+The session also accepts a `command_execution_message` instead of an `invocation_message`. This runs `pre_execution_downloadables` and the provided commands, streams output as `assistant_message`s, and returns a `command_execution_result_message` with per-command exit codes. The agent handler never gets invoked. Each command can specify its own `env` and `cwd`. See the [Python client docs](../runtimeuse-client-python/README.md#command-only-execution) for usage.
+
+## Environment Variables
+
+Environment variables can be injected at two levels:
+
+- **Per-command (`Command.env`)** -- each command in `pre_agent_invocation_commands`, `post_agent_invocation_commands`, or `command_execution_message.commands` can carry its own `env` map. These are merged on top of `process.env` when the command is spawned.
+- **Per-invocation (`InvocationMessage.agent_env`)** -- environment variables passed to the agent handler. The Claude handler merges these on top of `process.env` when calling the Claude Agent SDK. Custom handlers receive these via `AgentInvocation.env`.
 
 ## Artifact Management
 
@@ -224,17 +232,17 @@ Command output (stdout/stderr) from pre-commands is automatically redacted using
 
 ### Protocol Message Types
 
-| Type                            | Direction         | Description                             |
-| ------------------------------- | ----------------- | --------------------------------------- |
-| `InvocationMessage`               | Client -> Runtime | Start an agent invocation                  |
-| `CommandExecutionMessage`         | Client -> Runtime | Run commands without agent invocation       |
-| `CancelMessage`                   | Client -> Runtime | Cancel a running invocation or execution    |
-| `ArtifactUploadResponseMessage`   | Client -> Runtime | Presigned URL for artifact upload           |
-| `ResultMessage`                   | Runtime -> Client | Structured agent result                     |
-| `CommandExecutionResultMessage`   | Runtime -> Client | Per-command exit codes                      |
-| `AssistantMessage`                | Runtime -> Client | Intermediate text from the agent            |
-| `ArtifactUploadRequestMessage`    | Runtime -> Client | Request a presigned URL for an artifact     |
-| `ErrorMessage`                    | Runtime -> Client | Error during execution                      |
+| Type                            | Direction         | Description                              |
+| ------------------------------- | ----------------- | ---------------------------------------- |
+| `InvocationMessage`             | Client -> Runtime | Start an agent invocation                |
+| `CommandExecutionMessage`       | Client -> Runtime | Run commands without agent invocation    |
+| `CancelMessage`                 | Client -> Runtime | Cancel a running invocation or execution |
+| `ArtifactUploadResponseMessage` | Client -> Runtime | Presigned URL for artifact upload        |
+| `ResultMessage`                 | Runtime -> Client | Structured agent result                  |
+| `CommandExecutionResultMessage` | Runtime -> Client | Per-command exit codes                   |
+| `AssistantMessage`              | Runtime -> Client | Intermediate text from the agent         |
+| `ArtifactUploadRequestMessage`  | Runtime -> Client | Request a presigned URL for an artifact  |
+| `ErrorMessage`                  | Runtime -> Client | Error during execution                   |
 
 ## Related Docs
 

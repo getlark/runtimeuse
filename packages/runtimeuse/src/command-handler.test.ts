@@ -147,6 +147,38 @@ describe("CommandHandler", () => {
       );
     });
 
+    it("merges command env on top of process.env", () => {
+      const handler = createHandler({
+        command: "echo",
+        cwd: "/work",
+        env: { MY_VAR: "hello", OTHER: "world" },
+      });
+
+      handler.execute();
+
+      expect(exec).toHaveBeenCalledWith(
+        "echo",
+        expect.objectContaining({
+          env: { ...process.env, MY_VAR: "hello", OTHER: "world" },
+        }),
+        expect.any(Function),
+      );
+    });
+
+    it("uses only process.env when command env is undefined", () => {
+      const handler = createHandler({ command: "echo", cwd: "/work" });
+
+      handler.execute();
+
+      expect(exec).toHaveBeenCalledWith(
+        "echo",
+        expect.objectContaining({
+          env: { ...process.env },
+        }),
+        expect.any(Function),
+      );
+    });
+
     it("passes abort signal to exec", () => {
       const ac = new AbortController();
       const handler = createHandler({ command: "sleep" }, ac);

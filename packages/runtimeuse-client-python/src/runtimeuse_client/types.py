@@ -26,6 +26,7 @@ class CommandInterface(BaseModel):
 
     cwd: str | None = None
     command: str
+    env: dict[str, str] | None = None
 
 
 class InvocationMessage(BaseModel):
@@ -33,6 +34,7 @@ class InvocationMessage(BaseModel):
     source_id: str | None = None
     system_prompt: str
     user_prompt: str
+    agent_env: dict[str, str] | None = None
     output_format_json_schema_str: str | None = None
     secrets_to_redact: list[str] = Field(default_factory=list)
     artifacts_dir: str | None = None
@@ -106,7 +108,9 @@ class CommandExecutionMessage(BaseModel):
     secrets_to_redact: list[str] = Field(default_factory=list)
     commands: list[CommandInterface]
     artifacts_dir: str | None = None
-    pre_execution_downloadables: list[RuntimeEnvironmentDownloadableInterface] | None = None
+    pre_execution_downloadables: (
+        list[RuntimeEnvironmentDownloadableInterface] | None
+    ) = None
 
 
 class CommandResultItem(BaseModel):
@@ -157,6 +161,8 @@ class QueryOptions:
 
     #: Caller-defined identifier for tracing/logging purposes.
     source_id: str | None = None
+    #: Environment variables to set in the agent runtime.
+    agent_env: dict[str, str] | None = None
     #: Secret values to redact from agent logs and responses.
     secrets_to_redact: list[str] = field(default_factory=list)
     #: Directory inside the runtime environment where artifacts are written.
@@ -197,7 +203,9 @@ class ExecuteCommandsOptions:
     #: Directory inside the runtime environment where artifacts are written.
     artifacts_dir: str | None = None
     #: Files to download into the runtime environment before commands run.
-    pre_execution_downloadables: list[RuntimeEnvironmentDownloadableInterface] | None = None
+    pre_execution_downloadables: (
+        list[RuntimeEnvironmentDownloadableInterface] | None
+    ) = None
     #: Called for each assistant (intermediate) message streamed back.
     on_assistant_message: OnAssistantMessageCallback | None = None
     #: Called when the runtime requests an artifact upload URL.

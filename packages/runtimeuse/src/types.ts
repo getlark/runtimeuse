@@ -1,6 +1,7 @@
 interface Command {
   command: string;
   cwd?: string;
+  env?: Record<string, string>;
 }
 
 interface RuntimeEnvironmentDownloadable {
@@ -13,6 +14,7 @@ interface InvocationMessage {
   source_id?: string;
   system_prompt: string;
   user_prompt: string;
+  agent_env?: Record<string, string>;
   secrets_to_redact: string[];
   output_format_json_schema_str?: string;
   model: string;

@@ -48,7 +48,7 @@ class CommandHandler {
         this.command.command,
         {
           cwd: this.command.cwd ?? process.cwd(),
-          env: process.env,
+          env: { ...process.env, ...this.command.env },
           signal: this.abortController.signal,
         },
         (error, stdout, stderr) => {

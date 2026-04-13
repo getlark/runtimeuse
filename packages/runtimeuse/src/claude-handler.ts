@@ -1,4 +1,4 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { Options, query } from "@anthropic-ai/claude-agent-sdk";
 import type {
   AgentHandler,
   AgentInvocation,
@@ -36,27 +36,14 @@ export const claudeHandler: AgentHandler = {
     invocation.signal.addEventListener("abort", onAbort, { once: true });
 
     try {
-      const queryOptions: Record<string, unknown> = {
+      const queryOptions: Options = {
         systemPrompt: invocation.systemPrompt,
         model: invocation.model,
         abortController,
         tools: { type: "preset", preset: "claude_code" },
         permissionMode: "bypassPermissions",
         allowDangerouslySkipPermissions: true,
-        hooks: {
-          PostToolUse: [
-            {
-              hooks: [
-                async (input: Record<string, unknown>) => {
-                  invocation.logger.log(
-                    `[PostToolUse] tool=${input.tool_name} input=${JSON.stringify(input.tool_input)} response=${JSON.stringify(input.tool_response)}`,
-                  );
-                  return {};
-                },
-              ],
-            },
-          ],
-        },
+        env: { ...process.env, ...invocation.env },
       };
       if (invocation.outputFormat) {
         queryOptions.outputFormat = invocation.outputFormat;
@@ -64,14 +51,12 @@ export const claudeHandler: AgentHandler = {
 
       const conversation = query({
         prompt: invocation.userPrompt,
-        options: queryOptions as Parameters<typeof query>[0]["options"],
+        options: queryOptions,
       });
 
       for await (const message of conversation) {
         if (message.type === "assistant") {
-          const text = extractTextFromContent(
-            message.message?.content ?? [],
-          );
+          const text = extractTextFromContent(message.message?.content ?? []);
           if (text) {
             sender.sendAssistantMessage([text]);
           }
@@ -90,8 +75,10 @@ export const claudeHandler: AgentHandler = {
                   "Expected structured_output in result but got none",
                 );
               }
-              structuredOutput =
-                message.structured_output as Record<string, unknown>;
+              structuredOutput = message.structured_output as Record<
+                string,
+                unknown
+              >;
             } else {
               if (message.structured_output != null) {
                 throw new Error(

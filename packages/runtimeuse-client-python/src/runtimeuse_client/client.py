@@ -98,6 +98,7 @@ class RuntimeUseClient:
             model=options.model,
             output_format_json_schema_str=options.output_format_json_schema_str,
             source_id=options.source_id,
+            agent_env=options.agent_env,
             secrets_to_redact=options.secrets_to_redact,
             artifacts_dir=options.artifacts_dir,
             pre_agent_invocation_commands=options.pre_agent_invocation_commands,
@@ -256,21 +257,16 @@ class RuntimeUseClient:
                     raise CancelledException("Command execution was cancelled")
 
                 try:
-                    message_interface = AgentRuntimeMessageInterface.model_validate(
-                        msg
-                    )
+                    message_interface = AgentRuntimeMessageInterface.model_validate(msg)
                 except pydantic.ValidationError:
                     logger.error(
                         f"Received unknown message type from agent runtime: {msg}"
                     )
                     continue
 
-                if (
-                    message_interface.message_type
-                    == "command_execution_result_message"
-                ):
-                    wire_result = (
-                        CommandExecutionResultMessageInterface.model_validate(msg)
+                if message_interface.message_type == "command_execution_result_message":
+                    wire_result = CommandExecutionResultMessageInterface.model_validate(
+                        msg
                     )
                     logger.info(
                         f"Received command execution result from agent runtime: {msg}"
@@ -282,15 +278,13 @@ class RuntimeUseClient:
                         assistant_message_interface = (
                             AssistantMessageInterface.model_validate(msg)
                         )
-                        await options.on_assistant_message(
-                            assistant_message_interface
-                        )
+                        await options.on_assistant_message(assistant_message_interface)
                     continue
 
                 elif message_interface.message_type == "error_message":
                     try:
-                        error_message_interface = (
-                            ErrorMessageInterface.model_validate(msg)
+                        error_message_interface = ErrorMessageInterface.model_validate(
+                            msg
                         )
                     except pydantic.ValidationError:
                         logger.error(
@@ -306,17 +300,14 @@ class RuntimeUseClient:
                     )
 
                 elif (
-                    message_interface.message_type
-                    == "artifact_upload_request_message"
+                    message_interface.message_type == "artifact_upload_request_message"
                 ):
                     logger.info(
                         f"Received artifact upload request message from agent runtime: {msg}"
                     )
                     if options.on_artifact_upload_request is not None:
                         artifact_upload_request_message_interface = (
-                            ArtifactUploadRequestMessageInterface.model_validate(
-                                msg
-                            )
+                            ArtifactUploadRequestMessageInterface.model_validate(msg)
                         )
                         upload_result = await options.on_artifact_upload_request(
                             artifact_upload_request_message_interface

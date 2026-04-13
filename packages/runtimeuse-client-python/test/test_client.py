@@ -45,7 +45,10 @@ class TestResultMessage:
     async def test_structured_output_result(self, fake_transport, make_query_options):
         result_msg = {
             "message_type": "result_message",
-            "data": {"type": "structured_output", "structured_output": {"success": True}},
+            "data": {
+                "type": "structured_output",
+                "structured_output": {"success": True},
+            },
             "metadata": {"duration_ms": 50},
         }
         transport, client = fake_transport([result_msg])
@@ -363,7 +366,10 @@ class TestMultipleMessages:
             },
             {
                 "message_type": "result_message",
-                "data": {"type": "structured_output", "structured_output": {"answer": 42}},
+                "data": {
+                    "type": "structured_output",
+                    "structured_output": {"answer": 42},
+                },
                 "metadata": {"duration_ms": 100},
             },
         ]
@@ -420,6 +426,36 @@ class TestInvocationSent:
         assert (
             invocation_msgs[0]["output_format_json_schema_str"] == '{"type":"object"}'
         )
+
+    @pytest.mark.asyncio
+    async def test_agent_env_forwarded_when_set(
+        self, fake_transport, make_query_options
+    ):
+        transport, client = fake_transport([TEXT_RESULT_MSG])
+
+        await client.query(
+            prompt=DEFAULT_PROMPT,
+            options=make_query_options(agent_env={"MY_VAR": "hello"}),
+        )
+
+        invocation_msgs = [
+            m for m in transport.sent if m.get("message_type") == "invocation_message"
+        ]
+        assert invocation_msgs[0]["agent_env"] == {"MY_VAR": "hello"}
+
+    @pytest.mark.asyncio
+    async def test_agent_env_none_when_omitted(self, fake_transport, query_options):
+        transport, client = fake_transport([TEXT_RESULT_MSG])
+
+        await client.query(
+            prompt=DEFAULT_PROMPT,
+            options=query_options,
+        )
+
+        invocation_msgs = [
+            m for m in transport.sent if m.get("message_type") == "invocation_message"
+        ]
+        assert invocation_msgs[0]["agent_env"] is None
 
     @pytest.mark.asyncio
     async def test_schema_none_when_omitted(self, fake_transport, query_options):
@@ -518,7 +554,9 @@ class TestExecuteCommands:
         ]
         assert len(cmd_msgs) == 1
         assert cmd_msgs[0]["source_id"] == "cmd-test"
-        assert cmd_msgs[0]["commands"] == [{"command": "echo hello", "cwd": None}]
+        assert cmd_msgs[0]["commands"] == [
+            {"command": "echo hello", "cwd": None, "env": None}
+        ]
 
     @pytest.mark.asyncio
     async def test_assistant_message_dispatched(
@@ -640,6 +678,49 @@ class TestExecuteCommands:
         assert len(response_msgs) == 1
         assert response_msgs[0]["filename"] == "output.txt"
         assert response_msgs[0]["presigned_url"] == "https://s3.example.com/presigned"
+
+    @pytest.mark.asyncio
+    async def test_command_env_forwarded(
+        self, fake_transport, make_execute_commands_options
+    ):
+        result_msg = {
+            "message_type": "command_execution_result_message",
+            "results": [{"command": "echo hello", "exit_code": 0}],
+        }
+        transport, client = fake_transport([result_msg])
+
+        await client.execute_commands(
+            commands=[CommandInterface(command="echo hello", env={"FOO": "bar"})],
+            options=make_execute_commands_options(),
+        )
+
+        cmd_msgs = [
+            m
+            for m in transport.sent
+            if m.get("message_type") == "command_execution_message"
+        ]
+        assert len(cmd_msgs) == 1
+        assert cmd_msgs[0]["commands"] == [
+            {"command": "echo hello", "cwd": None, "env": {"FOO": "bar"}}
+        ]
+
+    @pytest.mark.asyncio
+    async def test_command_env_none_by_default(
+        self, fake_transport, make_execute_commands_options
+    ):
+        transport, client = fake_transport([COMMAND_RESULT_MSG])
+
+        await client.execute_commands(
+            commands=[CommandInterface(command="echo hello")],
+            options=make_execute_commands_options(),
+        )
+
+        cmd_msgs = [
+            m
+            for m in transport.sent
+            if m.get("message_type") == "command_execution_message"
+        ]
+        assert cmd_msgs[0]["commands"][0]["env"] is None
 
     def test_execute_commands_options_artifacts_validation(self):
         with pytest.raises(ValueError, match="must be specified together"):

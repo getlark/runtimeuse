@@ -289,6 +289,66 @@ describe("InvocationRunner", () => {
     );
   });
 
+  it("passes agent_env to handler as env", async () => {
+    mockHandlerRun.mockResolvedValueOnce({
+      type: "text",
+      text: "done",
+    } as AgentResult);
+    const { runner } = createRunner({
+      agent_env: { API_KEY: "secret", MODE: "test" },
+      output_format_json_schema_str: undefined,
+    });
+
+    await runner.run({
+      ...BASE_INVOCATION_MESSAGE,
+      agent_env: { API_KEY: "secret", MODE: "test" },
+      output_format_json_schema_str: undefined,
+    });
+
+    expect(mockHandlerRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: { API_KEY: "secret", MODE: "test" },
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("passes undefined env when agent_env is not set", async () => {
+    mockHandlerRun.mockResolvedValueOnce({
+      type: "text",
+      text: "done",
+    } as AgentResult);
+    const { runner } = createRunner();
+
+    await runner.run({
+      ...BASE_INVOCATION_MESSAGE,
+      output_format_json_schema_str: undefined,
+    });
+
+    expect(mockHandlerRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: undefined,
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("passes pre-command env through to CommandHandler", async () => {
+    const { runner, message } = createRunner({
+      pre_agent_invocation_commands: [
+        { command: "setup", cwd: "/app", env: { SETUP_VAR: "1" } },
+      ],
+    });
+
+    await runner.run(message);
+
+    expect(CommandHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: { command: "setup", cwd: "/app", env: { SETUP_VAR: "1" } },
+      }),
+    );
+  });
+
   it("builds command handlers for each configured command", async () => {
     const { runner, message } = createRunner({
       pre_agent_invocation_commands: [
@@ -411,6 +471,22 @@ describe("InvocationRunner.runCommandsOnly", () => {
       error: "command failed with exit code: 2",
       metadata: {},
     });
+  });
+
+  it("passes command env through to CommandHandler", async () => {
+    const { runner, message } = createCommandRunner({
+      commands: [
+        { command: "echo hello", cwd: "/app", env: { FOO: "bar" } },
+      ],
+    });
+
+    await runner.runCommandsOnly(message);
+
+    expect(CommandHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: { command: "echo hello", cwd: "/app", env: { FOO: "bar" } },
+      }),
+    );
   });
 
   it("downloads runtime environment before running commands", async () => {
