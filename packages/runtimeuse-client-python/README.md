@@ -114,6 +114,7 @@ result = await client.query(
     options=QueryOptions(
         system_prompt="You are a helpful assistant.",
         model="gpt-4.1",
+        agent_env={"MY_VAR": "value"},               # optional -- env vars for the agent
         pre_agent_downloadables=[downloadable],          # optional
         output_format_json_schema_str='...',         # optional -- omit for text response
         on_assistant_message=on_assistant,            # optional
@@ -147,7 +148,7 @@ result = await client.execute_commands(
     commands=[
         CommandInterface(command="mkdir -p /app/output"),
         CommandInterface(command="echo 'sandbox is ready' > /app/output/status.txt"),
-        CommandInterface(command="cat /app/output/status.txt"),
+        CommandInterface(command="cat /app/output/status.txt", env={"MY_VAR": "value"}),
     ],
     options=ExecuteCommandsOptions(
         on_assistant_message=on_assistant,  # optional -- streams stdout/stderr
@@ -203,22 +204,22 @@ except CancelledException:
 
 ### Types
 
-| Class                                     | Description                                                              |
-| ----------------------------------------- | ------------------------------------------------------------------------ |
-| `QueryOptions`                            | Configuration for `client.query()` (prompt options, callbacks, timeout)  |
-| `QueryResult`                             | Return type of `query()` (`.data`, `.metadata`)                          |
-| `ResultMessageInterface`                  | Wire-format result message from the runtime                              |
-| `TextResult`                              | Result variant when no output schema is specified (`.text`)              |
-| `StructuredOutputResult`                  | Result variant when an output schema is specified (`.structured_output`) |
-| `AssistantMessageInterface`               | Intermediate assistant text messages                                     |
-| `ArtifactUploadRequestMessageInterface`   | Runtime requesting a presigned URL for artifact upload                   |
-| `ArtifactUploadResponseMessageInterface`  | Response with presigned URL sent back to runtime                         |
-| `ErrorMessageInterface`                   | Error from the agent runtime                                             |
-| `ExecuteCommandsOptions`                  | Configuration for `client.execute_commands()` (callbacks, timeout)        |
-| `CommandExecutionResult`                  | Return type of `execute_commands()` (`.results`)                         |
-| `CommandResultItem`                       | Per-command result (`.command`, `.exit_code`)                            |
-| `CommandInterface`                        | Shell command to execute (`.command`, `.cwd`)                            |
-| `RuntimeEnvironmentDownloadableInterface` | File to download into the runtime before invocation                      |
+| Class                                     | Description                                                                          |
+| ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| `QueryOptions`                            | Configuration for `client.query()` (prompt options, `agent_env`, callbacks, timeout) |
+| `QueryResult`                             | Return type of `query()` (`.data`, `.metadata`)                                      |
+| `ResultMessageInterface`                  | Wire-format result message from the runtime                                          |
+| `TextResult`                              | Result variant when no output schema is specified (`.text`)                          |
+| `StructuredOutputResult`                  | Result variant when an output schema is specified (`.structured_output`)             |
+| `AssistantMessageInterface`               | Intermediate assistant text messages                                                 |
+| `ArtifactUploadRequestMessageInterface`   | Runtime requesting a presigned URL for artifact upload                               |
+| `ArtifactUploadResponseMessageInterface`  | Response with presigned URL sent back to runtime                                     |
+| `ErrorMessageInterface`                   | Error from the agent runtime                                                         |
+| `ExecuteCommandsOptions`                  | Configuration for `client.execute_commands()` (callbacks, timeout)                   |
+| `CommandExecutionResult`                  | Return type of `execute_commands()` (`.results`)                                     |
+| `CommandResultItem`                       | Per-command result (`.command`, `.exit_code`)                                        |
+| `CommandInterface`                        | Shell command to execute (`.command`, `.cwd`, `.env`)                                |
+| `RuntimeEnvironmentDownloadableInterface` | File to download into the runtime before invocation                                  |
 
 ### Exceptions
 
