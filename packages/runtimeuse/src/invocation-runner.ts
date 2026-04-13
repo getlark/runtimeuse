@@ -51,6 +51,7 @@ export class InvocationRunner {
         userPrompt: message.user_prompt,
         outputFormat,
         model: message.model,
+        env: message.agent_env,
         secrets: message.secrets_to_redact,
         signal: abortController.signal,
         logger,
