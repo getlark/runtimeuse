@@ -104,6 +104,7 @@ Your handler receives an `AgentInvocation` with:
 | `outputFormat` | `{ type: "json_schema"; schema: ... } \| undefined` | Present when the client requests structured output. Pass to your agent to enforce the schema. |
 | `signal` | `AbortSignal` | Fires when the client sends a cancel message. Pass to any async operations that support cancellation. |
 | `logger` | `Logger` | Use `invocation.logger.log(msg)` to emit log lines visible in sandbox logs. |
+| `env` | `Record<string, string> \| undefined` | Environment variables from the client's `agent_env`. Merge with `process.env` when spawning subprocesses. |
 
 Use `MessageSender` to stream intermediate output before returning the final result:
 

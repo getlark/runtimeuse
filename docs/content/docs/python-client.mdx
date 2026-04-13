@@ -76,6 +76,24 @@ stats = RepoStats.model_validate(result.data.structured_output)
 print(stats)
 ```
 
+## Set Agent Environment Variables
+
+Use `agent_env` to inject environment variables into the agent process. These are merged on top of the sandbox's existing environment.
+
+```python
+result = await client.query(
+    prompt="Run the build and report any failures.",
+    options=QueryOptions(
+        system_prompt="You are a helpful assistant.",
+        model="gpt-5.4",
+        agent_env={
+            "NODE_ENV": "production",
+            "DATABASE_URL": "postgres://localhost/mydb",
+        },
+    ),
+)
+```
+
 ## Download Files into the Sandbox
 
 Use `pre_agent_downloadables` to fetch a repository, zip archive, or any URL into the sandbox before the agent runs. This is the primary way to give the agent access to a codebase or dataset.
@@ -163,7 +181,10 @@ client = RuntimeUseClient(ws_url="ws://localhost:8080")
 result = await client.execute_commands(
     commands=[
         CommandInterface(command="mkdir -p /app/output"),
-        CommandInterface(command="echo 'sandbox is ready' > /app/output/status.txt"),
+        CommandInterface(
+            command="echo $GREETING > /app/output/status.txt",
+            env={"GREETING": "sandbox is ready"},
+        ),
         CommandInterface(command="cat /app/output/status.txt"),
     ],
     options=ExecuteCommandsOptions(
@@ -176,6 +197,8 @@ for item in result.results:
 ```
 
 `execute_commands()` supports the same callbacks and options as `query()`: streaming via `on_assistant_message`, artifact uploads, cancellation, timeout, and `secrets_to_redact`. Use `pre_execution_downloadables` to fetch files into the sandbox before the commands run.
+
+Each `CommandInterface` accepts an optional `env` dict that is merged on top of the sandbox's `process.env` for that command.
 
 ## Cancel a Run
 
