@@ -116,5 +116,15 @@ describe("redactSecrets", () => {
         redactSecrets("my-secret-key", ["secret", "my-secret-key"]),
       ).toBe("my-[REDACTED]-key");
     });
+
+    it("handles circular references without stack overflow", () => {
+      const obj: Record<string, unknown> = { key: "SECRET" };
+      obj.self = obj;
+      const result = redactSecrets(obj, ["SECRET"]) as Record<string, unknown>;
+      expect(result.key).toBe("[REDACTED]");
+      // Circular ref points to the redacted result, not the original
+      expect(result.self).toBe(result);
+      expect((result.self as Record<string, unknown>).key).toBe("[REDACTED]");
+    });
   });
 });
