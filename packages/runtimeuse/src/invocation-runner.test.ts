@@ -66,6 +66,7 @@ const BASE_INVOCATION_MESSAGE: InvocationMessage = {
 function createRunner(overrides?: Partial<InvocationMessage>) {
   const logger: Logger = {
     log: vi.fn(),
+    warn: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
   };
@@ -374,6 +375,7 @@ const BASE_COMMAND_EXECUTION_MESSAGE: CommandExecutionMessage = {
 function createCommandRunner(overrides?: Partial<CommandExecutionMessage>) {
   const logger: Logger = {
     log: vi.fn(),
+    warn: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
   };

@@ -24,6 +24,8 @@ export class WebSocketSession {
   private readonly abortController = new AbortController();
   private artifactManager: ArtifactManager | null = null;
   private invocationReceived = false;
+  private finalized = false;
+  private cancelled = false;
   private secrets: string[] = [];
   private logger: Logger;
 
@@ -50,7 +52,12 @@ export class WebSocketSession {
         }
       });
 
-      this.ws.on("close", async () => {
+      this.ws.on("close", async (code, reason) => {
+        if (!this.finalized && !this.cancelled) {
+          this.logger.warn(
+            `WebSocket closed unexpectedly (code=${code}, reason=${reason?.toString() ?? ""}). Artifacts may not have been fully uploaded.`,
+          );
+        }
         this.logger.log("WebSocket connection closed");
         this.abortController.abort();
         await this.artifactManager?.stopWatching();
@@ -97,6 +104,7 @@ export class WebSocketSession {
 
       case "cancel_message":
         this.logger.log("Received cancel message. Aborting agent execution...");
+        this.cancelled = true;
         this.abortController.abort();
         this.ws.close();
         break;
@@ -222,6 +230,7 @@ export class WebSocketSession {
       this.config.uploadTimeoutMs ?? 30_000,
     );
     this.logger.log("All artifacts uploaded.");
+    this.finalized = true;
     this.ws.close();
   }
 
