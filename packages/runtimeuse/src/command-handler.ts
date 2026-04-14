@@ -53,14 +53,7 @@ class CommandHandler {
         },
         (error, stdout, stderr) => {
           if (error) {
-            if (error.code === 1) {
-              return resolve({ exitCode: error.code as number, error });
-            }
-            this.logger.error(
-              "Error executing command:",
-              JSON.stringify(error),
-            );
-            return reject({ exitCode: error.code, error });
+            return resolve({ exitCode: error.code as number, error });
           }
         },
       );
@@ -85,11 +78,8 @@ class CommandHandler {
       });
 
       result.on("close", (code) => {
-        if (code === 0 || code === 1) {
-          this.logger.log("Command closed with code:", code);
-          return resolve({ exitCode: code });
-        }
-        return reject({ exitCode: code });
+        this.logger.log("Command closed with code:", code);
+        return resolve({ exitCode: code ?? 0 });
       });
     });
   }

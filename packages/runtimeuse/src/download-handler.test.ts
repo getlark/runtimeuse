@@ -47,6 +47,7 @@ import type { Logger } from "./logger.js";
 
 const mockLogger: Logger = {
   log: vi.fn(),
+  warn: vi.fn(),
   error: vi.fn(),
   debug: vi.fn(),
 };

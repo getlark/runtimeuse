@@ -652,14 +652,36 @@ class TestExecuteCommands:
         all_text = [block for msg in received for block in msg.text_blocks]
         assert any("streamed-sentinel" in t for t in all_text)
 
-    async def test_failed_command_raises_error(
+    async def test_failed_command_returns_exit_code(
         self, client: RuntimeUseClient, make_execute_commands_options
     ):
-        with pytest.raises(AgentRuntimeError, match="command failed with exit code"):
-            await client.execute_commands(
-                commands=[CommandInterface(command="exit 1")],
-                options=make_execute_commands_options(timeout=10),
-            )
+        result = await client.execute_commands(
+            commands=[CommandInterface(command="exit 1")],
+            options=make_execute_commands_options(timeout=10),
+        )
+
+        assert isinstance(result, CommandExecutionResult)
+        assert len(result.results) == 1
+        assert result.results[0].command == "exit 1"
+        assert result.results[0].exit_code == 1
+
+    async def test_failed_command_skips_remaining(
+        self, client: RuntimeUseClient, make_execute_commands_options
+    ):
+        result = await client.execute_commands(
+            commands=[
+                CommandInterface(command="echo first"),
+                CommandInterface(command="exit 2"),
+                CommandInterface(command="echo should-not-run"),
+            ],
+            options=make_execute_commands_options(timeout=10),
+        )
+
+        assert len(result.results) == 2
+        assert result.results[0].command == "echo first"
+        assert result.results[0].exit_code == 0
+        assert result.results[1].command == "exit 2"
+        assert result.results[1].exit_code == 2
 
     async def test_agent_handler_not_invoked(
         self, client: RuntimeUseClient, make_execute_commands_options

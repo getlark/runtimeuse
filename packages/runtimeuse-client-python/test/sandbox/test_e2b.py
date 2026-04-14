@@ -66,3 +66,40 @@ class TestE2BSandbox:
             assert any("hello-from-e2b" in t for t in all_text)
         finally:
             sandbox.kill()
+
+    async def test_execute_commands_failure_returns_exit_code(self):
+        sandbox, ws_url = create_e2b_runtimeuse(agent="openai")
+        try:
+            client = RuntimeUseClient(ws_url=ws_url)
+            result = await client.execute_commands(
+                commands=[
+                    CommandInterface(command="exit 1"),
+                ],
+                options=ExecuteCommandsOptions(timeout=30),
+            )
+
+            assert isinstance(result, CommandExecutionResult)
+            assert len(result.results) == 1
+            assert result.results[0].exit_code == 1
+        finally:
+            sandbox.kill()
+
+    async def test_execute_commands_failure_skips_remaining(self):
+        sandbox, ws_url = create_e2b_runtimeuse(agent="openai")
+        try:
+            client = RuntimeUseClient(ws_url=ws_url)
+            result = await client.execute_commands(
+                commands=[
+                    CommandInterface(command="echo first"),
+                    CommandInterface(command="exit 1"),
+                    CommandInterface(command="echo should-not-run"),
+                ],
+                options=ExecuteCommandsOptions(timeout=30),
+            )
+
+            assert isinstance(result, CommandExecutionResult)
+            assert len(result.results) == 2
+            assert result.results[0].exit_code == 0
+            assert result.results[1].exit_code == 1
+        finally:
+            sandbox.kill()
