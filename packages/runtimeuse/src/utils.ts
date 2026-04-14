@@ -9,27 +9,41 @@ export async function sleep(ms: number) {
 export function redactSecrets<T>(value: T, secrets: string[]): T {
   if (secrets.length === 0) return value;
 
-  if (typeof value === "string") {
-    let redacted: string = value;
-    for (const secret of secrets) {
-      if (secret && redacted.includes(secret)) {
-        redacted = redacted.replaceAll(secret, "[REDACTED]");
+  const seen = new WeakMap<object, unknown>();
+
+  function redact<U>(val: U): U {
+    if (typeof val === "string") {
+      let redacted: string = val;
+      for (const secret of secrets) {
+        if (secret && redacted.includes(secret)) {
+          redacted = redacted.replaceAll(secret, "[REDACTED]");
+        }
       }
+      return redacted as U;
     }
-    return redacted as T;
-  }
 
-  if (Array.isArray(value)) {
-    return value.map((item) => redactSecrets(item, secrets)) as T;
-  }
+    if (val !== null && typeof val === "object") {
+      if (seen.has(val as object)) return seen.get(val as object) as U;
 
-  if (value !== null && typeof value === "object") {
-    const result: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(value)) {
-      result[key] = redactSecrets(val, secrets);
+      if (Array.isArray(val)) {
+        const result: unknown[] = [];
+        seen.set(val as object, result);
+        for (const item of val) {
+          result.push(redact(item));
+        }
+        return result as U;
+      }
+
+      const result: Record<string, unknown> = {};
+      seen.set(val as object, result);
+      for (const [key, v] of Object.entries(val)) {
+        result[key] = redact(v);
+      }
+      return result as U;
     }
-    return result as T;
+
+    return val;
   }
 
-  return value;
+  return redact(value);
 }
