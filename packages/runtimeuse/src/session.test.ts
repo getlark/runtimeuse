@@ -483,14 +483,23 @@ describe("WebSocketSession", () => {
       expect(mockHandlerRun).not.toHaveBeenCalled();
     });
 
-    it("sends error when command fails", async () => {
+    it("returns result with exit code when command fails", async () => {
       mockCommandExecute.mockResolvedValueOnce({ exitCode: 1 });
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, COMMAND_EXEC_MSG);
       await done;
 
-      expectSentError(ws, "command failed with exit code: 1");
+      const sent = parseSentMessages(ws);
+      const result = sent.find(
+        (m) => m.message_type === "command_execution_result_message",
+      );
+      expect(result).toBeDefined();
+      expect(result!.results).toEqual([
+        { command: "echo hello", exit_code: 1 },
+      ]);
+      const errors = sent.filter((m) => m.message_type === "error_message");
+      expect(errors).toHaveLength(0);
     });
 
     it("rejects duplicate command execution messages", async () => {

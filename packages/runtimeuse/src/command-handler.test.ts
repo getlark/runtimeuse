@@ -238,7 +238,7 @@ describe("CommandHandler", () => {
       expect(result.error).toBeDefined();
     });
 
-    it("rejects with non-0/1 exit codes from close event", async () => {
+    it("resolves with non-0/1 exit codes from close event", async () => {
       const handler = createHandler({ command: "segfault" });
 
       const promise = handler.execute();
@@ -249,10 +249,11 @@ describe("CommandHandler", () => {
       )[1];
       closeHandler(139);
 
-      await expect(promise).rejects.toEqual({ exitCode: 139 });
+      const result = await promise;
+      expect(result).toEqual({ exitCode: 139 });
     });
 
-    it("rejects when callback reports a non-1 error code", async () => {
+    it("resolves when callback reports a non-1 error code", async () => {
       const handler = createHandler({ command: "crash" });
 
       const promise = handler.execute();
@@ -260,7 +261,9 @@ describe("CommandHandler", () => {
       const err = Object.assign(new Error("killed"), { code: 137 });
       execCallback(err, "", "");
 
-      await expect(promise).rejects.toMatchObject({ exitCode: 137 });
+      const result = await promise;
+      expect(result.exitCode).toBe(137);
+      expect(result.error).toBeDefined();
     });
   });
 

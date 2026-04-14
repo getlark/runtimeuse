@@ -585,16 +585,61 @@ class TestExecuteCommands:
     ):
         error_msg = {
             "message_type": "error_message",
-            "error": "command failed with exit code: 1",
+            "error": "something went wrong",
             "metadata": {},
         }
         transport, client = fake_transport([error_msg])
 
-        with pytest.raises(AgentRuntimeError, match="command failed"):
+        with pytest.raises(AgentRuntimeError, match="something went wrong"):
             await client.execute_commands(
-                commands=[CommandInterface(command="exit 1")],
+                commands=[CommandInterface(command="echo hello")],
                 options=make_execute_commands_options(),
             )
+
+    @pytest.mark.asyncio
+    async def test_non_zero_exit_code_returns_result(
+        self, fake_transport, make_execute_commands_options
+    ):
+        result_msg = {
+            "message_type": "command_execution_result_message",
+            "results": [{"command": "exit 1", "exit_code": 1}],
+        }
+        transport, client = fake_transport([result_msg])
+
+        result = await client.execute_commands(
+            commands=[CommandInterface(command="exit 1")],
+            options=make_execute_commands_options(),
+        )
+
+        assert isinstance(result, CommandExecutionResult)
+        assert len(result.results) == 1
+        assert result.results[0].exit_code == 1
+
+    @pytest.mark.asyncio
+    async def test_failed_command_skips_remaining(
+        self, fake_transport, make_execute_commands_options
+    ):
+        result_msg = {
+            "message_type": "command_execution_result_message",
+            "results": [
+                {"command": "echo first", "exit_code": 0},
+                {"command": "exit 1", "exit_code": 1},
+            ],
+        }
+        transport, client = fake_transport([result_msg])
+
+        result = await client.execute_commands(
+            commands=[
+                CommandInterface(command="echo first"),
+                CommandInterface(command="exit 1"),
+                CommandInterface(command="echo skipped"),
+            ],
+            options=make_execute_commands_options(),
+        )
+
+        assert len(result.results) == 2
+        assert result.results[0].exit_code == 0
+        assert result.results[1].exit_code == 1
 
     @pytest.mark.asyncio
     async def test_no_result_raises(

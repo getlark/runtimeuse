@@ -88,11 +88,17 @@ export class InvocationRunner {
 
     const results: CommandExecutionResultItem[] = [];
     for (const command of message.commands) {
-      await this.runCommandAndCollect(
+      const exitCode = await this.runCommandAndCollect(
         command,
         message.secrets_to_redact,
         results,
       );
+      if (exitCode !== 0) {
+        logger.log(
+          `Command failed with exit code ${exitCode}, skipping remaining commands`,
+        );
+        break;
+      }
     }
 
     const resultMessage: OutgoingMessage = {
@@ -110,7 +116,7 @@ export class InvocationRunner {
     command: Command,
     secrets: string[],
     results: CommandExecutionResultItem[],
-  ): Promise<void> {
+  ): Promise<number> {
     const { logger, abortController, send } = this.config;
 
     logger.log(
@@ -129,14 +135,8 @@ export class InvocationRunner {
     });
 
     const result = await handler.execute();
-    if (result.exitCode !== 0) {
-      const errorMsg = `command failed with exit code: ${result.exitCode}`;
-      logger.error(errorMsg);
-      send({ message_type: "error_message", error: errorMsg, metadata: {} });
-      throw new Error(errorMsg);
-    }
-
     results.push({ command: command.command, exit_code: result.exitCode });
+    return result.exitCode;
   }
 
   private async downloadRuntimeEnvironment(

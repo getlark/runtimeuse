@@ -457,21 +457,37 @@ describe("InvocationRunner.runCommandsOnly", () => {
     });
   });
 
-  it("sends error message and throws when command exits non-zero", async () => {
+  it("returns result with exit code when command exits non-zero", async () => {
     mockExecute.mockResolvedValueOnce({ exitCode: 2 });
-    const { runner, message, send, logger } = createCommandRunner();
+    const { runner, message, send } = createCommandRunner();
 
-    await expect(runner.runCommandsOnly(message)).rejects.toThrow(
-      "command failed with exit code: 2",
-    );
+    await runner.runCommandsOnly(message);
 
-    expect(logger.error).toHaveBeenCalledWith(
-      "command failed with exit code: 2",
-    );
     expect(send).toHaveBeenCalledWith({
-      message_type: "error_message",
-      error: "command failed with exit code: 2",
-      metadata: {},
+      message_type: "command_execution_result_message",
+      results: [{ command: "echo hello", exit_code: 2 }],
+    });
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message_type: "error_message" }),
+    );
+  });
+
+  it("skips remaining commands after a non-zero exit code", async () => {
+    mockExecute
+      .mockResolvedValueOnce({ exitCode: 1 })
+      .mockResolvedValueOnce({ exitCode: 0 });
+    const { runner, message, send } = createCommandRunner({
+      commands: [
+        { command: "failing", cwd: "/app" },
+        { command: "skipped", cwd: "/app" },
+      ],
+    });
+
+    await runner.runCommandsOnly(message);
+
+    expect(send).toHaveBeenCalledWith({
+      message_type: "command_execution_result_message",
+      results: [{ command: "failing", exit_code: 1 }],
     });
   });
 
