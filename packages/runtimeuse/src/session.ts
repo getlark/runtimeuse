@@ -4,7 +4,7 @@ import type { AgentHandler } from "./agent-handler.js";
 import { ArtifactManager } from "./artifact-manager.js";
 import type { UploadTracker } from "./upload-tracker.js";
 import type { InvocationMessage, CommandExecutionMessage, IncomingMessage, OutgoingMessage } from "./types.js";
-import { getErrorMessage, serializeErrorMetadata } from "./error-utils.js";
+import { getErrorMessage, serializeErrorMetadata, redactError } from "./error-utils.js";
 import { redactSecrets, sleep } from "./utils.js";
 import { createLogger, createRedactingLogger, defaultLogger, type Logger } from "./logger.js";
 import { InvocationRunner } from "./invocation-runner.js";
@@ -16,6 +16,7 @@ export interface SessionConfig {
   artifactWaitMs?: number;
   postInvocationDelayMs?: number;
   logger?: Logger;
+  onError?: (error: unknown, metadata: Record<string, unknown>) => void;
 }
 
 export class WebSocketSession {
@@ -42,6 +43,7 @@ export class WebSocketSession {
           await this.handleMessage(message, resolve);
         } catch (error) {
           this.logger.error("Error processing message:", error);
+          this.reportError(error, { phase: "message_parsing" });
           this.send({
             message_type: "error_message",
             error: getErrorMessage(error),
@@ -62,6 +64,7 @@ export class WebSocketSession {
 
       this.ws.on("error", (error) => {
         this.logger.error("WebSocket error:", error);
+        this.reportError(error, { phase: "websocket" });
       });
     });
   }
@@ -87,6 +90,7 @@ export class WebSocketSession {
           await this.artifactManager?.handleUploadResponse(message);
         } catch (error) {
           this.logger.error("Error uploading artifact:", error);
+          this.reportError(error, { phase: "artifact_upload" });
           this.send({
             message_type: "error_message",
             error: getErrorMessage(error),
@@ -158,6 +162,11 @@ export class WebSocketSession {
         return;
       }
       this.logger.error("Error in agent execution:", error);
+      this.reportError(error, {
+        phase: "agent_execution",
+        source_id: sourceId,
+        model: message.model,
+      });
       this.send({
         message_type: "error_message",
         error: getErrorMessage(error),
@@ -191,6 +200,10 @@ export class WebSocketSession {
         return;
       }
       this.logger.error("Error in command execution:", error);
+      this.reportError(error, {
+        phase: "command_execution",
+        source_id: sourceId,
+      });
       this.send({
         message_type: "error_message",
         error: getErrorMessage(error),
@@ -223,6 +236,20 @@ export class WebSocketSession {
     );
     this.logger.log("All artifacts uploaded.");
     this.ws.close();
+  }
+
+  private reportError(error: unknown, context: Record<string, unknown> = {}): void {
+    try {
+      this.config.onError?.(
+        redactError(error, this.secrets),
+        redactSecrets({
+          ...serializeErrorMetadata(error),
+          ...context,
+        }, this.secrets),
+      );
+    } catch {
+      // onError must not propagate — swallow to protect the caller's catch block
+    }
   }
 
   private send(data: OutgoingMessage): void {
