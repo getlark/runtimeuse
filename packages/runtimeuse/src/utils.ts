@@ -6,39 +6,44 @@ export async function sleep(ms: number) {
  * Recursively redact secret values from an arbitrary data structure.
  * Any string that contains a secret will have that secret replaced with [REDACTED].
  */
-export function redactSecrets<T>(value: T, secrets: string[], seen?: WeakMap<object, unknown>): T {
+export function redactSecrets<T>(value: T, secrets: string[]): T {
   if (secrets.length === 0) return value;
 
-  if (typeof value === "string") {
-    let redacted: string = value;
-    for (const secret of secrets) {
-      if (secret && redacted.includes(secret)) {
-        redacted = redacted.replaceAll(secret, "[REDACTED]");
+  const seen = new WeakMap<object, unknown>();
+
+  function redact<U>(val: U): U {
+    if (typeof val === "string") {
+      let redacted: string = val;
+      for (const secret of secrets) {
+        if (secret && redacted.includes(secret)) {
+          redacted = redacted.replaceAll(secret, "[REDACTED]");
+        }
       }
+      return redacted as U;
     }
-    return redacted as T;
+
+    if (val !== null && typeof val === "object") {
+      if (seen.has(val as object)) return seen.get(val as object) as U;
+
+      if (Array.isArray(val)) {
+        const result: unknown[] = [];
+        seen.set(val as object, result);
+        for (const item of val) {
+          result.push(redact(item));
+        }
+        return result as U;
+      }
+
+      const result: Record<string, unknown> = {};
+      seen.set(val as object, result);
+      for (const [key, v] of Object.entries(val)) {
+        result[key] = redact(v);
+      }
+      return result as U;
+    }
+
+    return val;
   }
 
-  if (value !== null && typeof value === "object") {
-    if (!seen) seen = new WeakMap();
-    if (seen.has(value as object)) return seen.get(value as object) as T;
-
-    if (Array.isArray(value)) {
-      const result: unknown[] = [];
-      seen.set(value as object, result);
-      for (const item of value) {
-        result.push(redactSecrets(item, secrets, seen));
-      }
-      return result as T;
-    }
-
-    const result: Record<string, unknown> = {};
-    seen.set(value as object, result);
-    for (const [key, val] of Object.entries(value)) {
-      result[key] = redactSecrets(val, secrets, seen);
-    }
-    return result as T;
-  }
-
-  return value;
+  return redact(value);
 }
