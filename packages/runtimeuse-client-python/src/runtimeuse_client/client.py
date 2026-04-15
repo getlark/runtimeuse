@@ -52,6 +52,7 @@ class RuntimeUseClient:
             raise ValueError("Either ws_url or transport must be provided")
 
         self._abort_event = asyncio.Event()
+        self._send_queue: asyncio.Queue[dict] | None = None
 
     def abort(self) -> None:
         """Signal the current query to cancel.
@@ -61,6 +62,13 @@ class RuntimeUseClient:
         coroutine on the same event loop.
         """
         self._abort_event.set()
+        send_queue = self._send_queue
+        if send_queue is not None:
+            send_queue.put_nowait(
+                CancelMessage(message_type="cancel_message").model_dump(
+                    mode="json"
+                )
+            )
 
     async def query(
         self,
@@ -107,98 +115,98 @@ class RuntimeUseClient:
         )
 
         send_queue: asyncio.Queue[dict] = asyncio.Queue()
+        self._send_queue = send_queue
         await send_queue.put(invocation.model_dump(mode="json"))
 
         wire_result: ResultMessageInterface | None = None
 
-        async with asyncio.timeout(options.timeout):
-            async for message in self._transport(send_queue=send_queue):
-                if self._abort_event.is_set():
-                    logger.info("Query cancelled by caller")
-                    await send_queue.put(
-                        CancelMessage(message_type="cancel_message").model_dump(
-                            mode="json"
-                        )
-                    )
-                    await send_queue.join()
-                    raise CancelledException("Query was cancelled")
+        try:
+            async with asyncio.timeout(options.timeout):
+                async for message in self._transport(send_queue=send_queue):
+                    if self._abort_event.is_set():
+                        raise CancelledException("Query was cancelled")
 
-                try:
-                    message_interface = AgentRuntimeMessageInterface.model_validate(
-                        message
-                    )
-                except pydantic.ValidationError:
-                    logger.error(
-                        f"Received unknown message type from agent runtime: {message}"
-                    )
-                    continue
-
-                if message_interface.message_type == "result_message":
-                    wire_result = ResultMessageInterface.model_validate(message)
-                    logger.info(
-                        f"Received result message from agent runtime: {message}"
-                    )
-                    continue
-
-                elif message_interface.message_type == "assistant_message":
-                    if options.on_assistant_message is not None:
-                        assistant_message_interface = (
-                            AssistantMessageInterface.model_validate(message)
-                        )
-                        await options.on_assistant_message(assistant_message_interface)
-                    continue
-
-                elif message_interface.message_type == "error_message":
                     try:
-                        error_message_interface = ErrorMessageInterface.model_validate(
+                        message_interface = AgentRuntimeMessageInterface.model_validate(
                             message
                         )
                     except pydantic.ValidationError:
                         logger.error(
-                            f"Received malformed error message from agent runtime: {message}",
+                            f"Received unknown message type from agent runtime: {message}"
                         )
-                        raise AgentRuntimeError(str(message))
-                    logger.error(
-                        f"Error from agent runtime: {error_message_interface}",
-                    )
-                    raise AgentRuntimeError(
-                        error_message_interface.error,
-                        metadata=error_message_interface.metadata,
-                    )
+                        continue
 
-                elif (
-                    message_interface.message_type == "artifact_upload_request_message"
-                ):
-                    logger.info(
-                        f"Received artifact upload request message from agent runtime: {message}"
-                    )
-                    if options.on_artifact_upload_request is not None:
-                        artifact_upload_request_message_interface = (
-                            ArtifactUploadRequestMessageInterface.model_validate(
+                    if message_interface.message_type == "result_message":
+                        wire_result = ResultMessageInterface.model_validate(message)
+                        logger.info(
+                            f"Received result message from agent runtime: {message}"
+                        )
+                        continue
+
+                    elif message_interface.message_type == "assistant_message":
+                        if options.on_assistant_message is not None:
+                            assistant_message_interface = (
+                                AssistantMessageInterface.model_validate(message)
+                            )
+                            await options.on_assistant_message(assistant_message_interface)
+                        continue
+
+                    elif message_interface.message_type == "error_message":
+                        try:
+                            error_message_interface = ErrorMessageInterface.model_validate(
                                 message
                             )
-                        )
-                        upload_result = await options.on_artifact_upload_request(
-                            artifact_upload_request_message_interface
-                        )
-                        artifact_upload_response_message_interface = ArtifactUploadResponseMessageInterface(
-                            message_type="artifact_upload_response_message",
-                            filename=artifact_upload_request_message_interface.filename,
-                            filepath=artifact_upload_request_message_interface.filepath,
-                            presigned_url=upload_result.presigned_url,
-                            content_type=upload_result.content_type,
-                        )
-                        await send_queue.put(
-                            artifact_upload_response_message_interface.model_dump(
-                                mode="json"
+                        except pydantic.ValidationError:
+                            logger.error(
+                                f"Received malformed error message from agent runtime: {message}",
                             )
+                            raise AgentRuntimeError(str(message))
+                        logger.error(
+                            f"Error from agent runtime: {error_message_interface}",
                         )
-                    continue
+                        raise AgentRuntimeError(
+                            error_message_interface.error,
+                            metadata=error_message_interface.metadata,
+                        )
 
-                else:
-                    logger.info(
-                        f"Received non-result message from agent runtime: {message}"
-                    )
+                    elif (
+                        message_interface.message_type == "artifact_upload_request_message"
+                    ):
+                        logger.info(
+                            f"Received artifact upload request message from agent runtime: {message}"
+                        )
+                        if options.on_artifact_upload_request is not None:
+                            artifact_upload_request_message_interface = (
+                                ArtifactUploadRequestMessageInterface.model_validate(
+                                    message
+                                )
+                            )
+                            upload_result = await options.on_artifact_upload_request(
+                                artifact_upload_request_message_interface
+                            )
+                            artifact_upload_response_message_interface = ArtifactUploadResponseMessageInterface(
+                                message_type="artifact_upload_response_message",
+                                filename=artifact_upload_request_message_interface.filename,
+                                filepath=artifact_upload_request_message_interface.filepath,
+                                presigned_url=upload_result.presigned_url,
+                                content_type=upload_result.content_type,
+                            )
+                            await send_queue.put(
+                                artifact_upload_response_message_interface.model_dump(
+                                    mode="json"
+                                )
+                            )
+                        continue
+
+                    else:
+                        logger.info(
+                            f"Received non-result message from agent runtime: {message}"
+                        )
+        finally:
+            self._send_queue = None
+
+        if self._abort_event.is_set():
+            raise CancelledException("Query was cancelled")
 
         if wire_result is None:
             raise AgentRuntimeError("No result message received")
@@ -240,96 +248,96 @@ class RuntimeUseClient:
         )
 
         send_queue: asyncio.Queue[dict] = asyncio.Queue()
+        self._send_queue = send_queue
         await send_queue.put(message.model_dump(mode="json"))
 
         wire_result: CommandExecutionResultMessageInterface | None = None
 
-        async with asyncio.timeout(options.timeout):
-            async for msg in self._transport(send_queue=send_queue):
-                if self._abort_event.is_set():
-                    logger.info("Command execution cancelled by caller")
-                    await send_queue.put(
-                        CancelMessage(message_type="cancel_message").model_dump(
-                            mode="json"
-                        )
-                    )
-                    await send_queue.join()
-                    raise CancelledException("Command execution was cancelled")
+        try:
+            async with asyncio.timeout(options.timeout):
+                async for msg in self._transport(send_queue=send_queue):
+                    if self._abort_event.is_set():
+                        raise CancelledException("Command execution was cancelled")
 
-                try:
-                    message_interface = AgentRuntimeMessageInterface.model_validate(msg)
-                except pydantic.ValidationError:
-                    logger.error(
-                        f"Received unknown message type from agent runtime: {msg}"
-                    )
-                    continue
-
-                if message_interface.message_type == "command_execution_result_message":
-                    wire_result = CommandExecutionResultMessageInterface.model_validate(
-                        msg
-                    )
-                    logger.info(
-                        f"Received command execution result from agent runtime: {msg}"
-                    )
-                    continue
-
-                elif message_interface.message_type == "assistant_message":
-                    if options.on_assistant_message is not None:
-                        assistant_message_interface = (
-                            AssistantMessageInterface.model_validate(msg)
-                        )
-                        await options.on_assistant_message(assistant_message_interface)
-                    continue
-
-                elif message_interface.message_type == "error_message":
                     try:
-                        error_message_interface = ErrorMessageInterface.model_validate(
-                            msg
-                        )
+                        message_interface = AgentRuntimeMessageInterface.model_validate(msg)
                     except pydantic.ValidationError:
                         logger.error(
-                            f"Received malformed error message from agent runtime: {msg}",
+                            f"Received unknown message type from agent runtime: {msg}"
                         )
-                        raise AgentRuntimeError(str(msg))
-                    logger.error(
-                        f"Error from agent runtime: {error_message_interface}",
-                    )
-                    raise AgentRuntimeError(
-                        error_message_interface.error,
-                        metadata=error_message_interface.metadata,
-                    )
+                        continue
 
-                elif (
-                    message_interface.message_type == "artifact_upload_request_message"
-                ):
-                    logger.info(
-                        f"Received artifact upload request message from agent runtime: {msg}"
-                    )
-                    if options.on_artifact_upload_request is not None:
-                        artifact_upload_request_message_interface = (
-                            ArtifactUploadRequestMessageInterface.model_validate(msg)
+                    if message_interface.message_type == "command_execution_result_message":
+                        wire_result = CommandExecutionResultMessageInterface.model_validate(
+                            msg
                         )
-                        upload_result = await options.on_artifact_upload_request(
-                            artifact_upload_request_message_interface
+                        logger.info(
+                            f"Received command execution result from agent runtime: {msg}"
                         )
-                        artifact_upload_response_message_interface = ArtifactUploadResponseMessageInterface(
-                            message_type="artifact_upload_response_message",
-                            filename=artifact_upload_request_message_interface.filename,
-                            filepath=artifact_upload_request_message_interface.filepath,
-                            presigned_url=upload_result.presigned_url,
-                            content_type=upload_result.content_type,
-                        )
-                        await send_queue.put(
-                            artifact_upload_response_message_interface.model_dump(
-                                mode="json"
+                        continue
+
+                    elif message_interface.message_type == "assistant_message":
+                        if options.on_assistant_message is not None:
+                            assistant_message_interface = (
+                                AssistantMessageInterface.model_validate(msg)
                             )
-                        )
-                    continue
+                            await options.on_assistant_message(assistant_message_interface)
+                        continue
 
-                else:
-                    logger.info(
-                        f"Received non-result message from agent runtime: {msg}"
-                    )
+                    elif message_interface.message_type == "error_message":
+                        try:
+                            error_message_interface = ErrorMessageInterface.model_validate(
+                                msg
+                            )
+                        except pydantic.ValidationError:
+                            logger.error(
+                                f"Received malformed error message from agent runtime: {msg}",
+                            )
+                            raise AgentRuntimeError(str(msg))
+                        logger.error(
+                            f"Error from agent runtime: {error_message_interface}",
+                        )
+                        raise AgentRuntimeError(
+                            error_message_interface.error,
+                            metadata=error_message_interface.metadata,
+                        )
+
+                    elif (
+                        message_interface.message_type == "artifact_upload_request_message"
+                    ):
+                        logger.info(
+                            f"Received artifact upload request message from agent runtime: {msg}"
+                        )
+                        if options.on_artifact_upload_request is not None:
+                            artifact_upload_request_message_interface = (
+                                ArtifactUploadRequestMessageInterface.model_validate(msg)
+                            )
+                            upload_result = await options.on_artifact_upload_request(
+                                artifact_upload_request_message_interface
+                            )
+                            artifact_upload_response_message_interface = ArtifactUploadResponseMessageInterface(
+                                message_type="artifact_upload_response_message",
+                                filename=artifact_upload_request_message_interface.filename,
+                                filepath=artifact_upload_request_message_interface.filepath,
+                                presigned_url=upload_result.presigned_url,
+                                content_type=upload_result.content_type,
+                            )
+                            await send_queue.put(
+                                artifact_upload_response_message_interface.model_dump(
+                                    mode="json"
+                                )
+                            )
+                        continue
+
+                    else:
+                        logger.info(
+                            f"Received non-result message from agent runtime: {msg}"
+                        )
+        finally:
+            self._send_queue = None
+
+        if self._abort_event.is_set():
+            raise CancelledException("Command execution was cancelled")
 
         if wire_result is None:
             raise AgentRuntimeError("No result message received")
