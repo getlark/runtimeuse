@@ -52,6 +52,7 @@ class RuntimeUseClient:
             raise ValueError("Either ws_url or transport must be provided")
 
         self._abort_event = asyncio.Event()
+        self._send_queue: asyncio.Queue[dict] | None = None
 
     def abort(self) -> None:
         """Signal the current query to cancel.
@@ -61,6 +62,13 @@ class RuntimeUseClient:
         coroutine on the same event loop.
         """
         self._abort_event.set()
+        send_queue = self._send_queue
+        if send_queue is not None:
+            send_queue.put_nowait(
+                CancelMessage(message_type="cancel_message").model_dump(
+                    mode="json"
+                )
+            )
 
     async def query(
         self,
@@ -107,6 +115,7 @@ class RuntimeUseClient:
         )
 
         send_queue: asyncio.Queue[dict] = asyncio.Queue()
+        self._send_queue = send_queue
         await send_queue.put(invocation.model_dump(mode="json"))
 
         wire_result: ResultMessageInterface | None = None
@@ -114,13 +123,6 @@ class RuntimeUseClient:
         async with asyncio.timeout(options.timeout):
             async for message in self._transport(send_queue=send_queue):
                 if self._abort_event.is_set():
-                    logger.info("Query cancelled by caller")
-                    await send_queue.put(
-                        CancelMessage(message_type="cancel_message").model_dump(
-                            mode="json"
-                        )
-                    )
-                    await send_queue.join()
                     raise CancelledException("Query was cancelled")
 
                 try:
@@ -200,6 +202,11 @@ class RuntimeUseClient:
                         f"Received non-result message from agent runtime: {message}"
                     )
 
+        self._send_queue = None
+
+        if self._abort_event.is_set():
+            raise CancelledException("Query was cancelled")
+
         if wire_result is None:
             raise AgentRuntimeError("No result message received")
 
@@ -240,6 +247,7 @@ class RuntimeUseClient:
         )
 
         send_queue: asyncio.Queue[dict] = asyncio.Queue()
+        self._send_queue = send_queue
         await send_queue.put(message.model_dump(mode="json"))
 
         wire_result: CommandExecutionResultMessageInterface | None = None
@@ -247,13 +255,6 @@ class RuntimeUseClient:
         async with asyncio.timeout(options.timeout):
             async for msg in self._transport(send_queue=send_queue):
                 if self._abort_event.is_set():
-                    logger.info("Command execution cancelled by caller")
-                    await send_queue.put(
-                        CancelMessage(message_type="cancel_message").model_dump(
-                            mode="json"
-                        )
-                    )
-                    await send_queue.join()
                     raise CancelledException("Command execution was cancelled")
 
                 try:
@@ -330,6 +331,11 @@ class RuntimeUseClient:
                     logger.info(
                         f"Received non-result message from agent runtime: {msg}"
                     )
+
+        self._send_queue = None
+
+        if self._abort_event.is_set():
+            raise CancelledException("Command execution was cancelled")
 
         if wire_result is None:
             raise AgentRuntimeError("No result message received")
