@@ -1,5 +1,4 @@
 import type { AgentHandler, MessageSender } from "./agent-handler.js";
-import { getErrorMessage, serializeErrorMetadata } from "./error-utils.js";
 import type {
   InvocationMessage,
   CommandExecutionMessage,
@@ -73,11 +72,6 @@ export class InvocationRunner {
         "Post-agent command failed; agent result will still be returned:",
         error,
       );
-      this.config.send({
-        message_type: "error_message",
-        error: getErrorMessage(error),
-        metadata: serializeErrorMetadata(error),
-      });
     }
 
     return {
@@ -190,7 +184,6 @@ export class InvocationRunner {
       if (result.exitCode !== 0) {
         const errorMsg = `${phase} command failed with exit code: ${result.exitCode}`;
         logger.error(errorMsg);
-        send({ message_type: "error_message", error: errorMsg, metadata: {} });
         throw new Error(errorMsg);
       }
     }

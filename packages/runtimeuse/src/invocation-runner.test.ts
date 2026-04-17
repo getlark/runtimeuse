@@ -187,13 +187,11 @@ describe("InvocationRunner", () => {
       metadata: { duration_ms: 5 },
       data: { type: "text", text: "agent succeeded" },
     });
-    // An error_message is emitted for the post-agent failure so the client is notified,
-    // but the agent's result is still returned as the terminal.
-    expect(send).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message_type: "error_message",
-        error: expect.stringContaining("post-agent command failed"),
-      }),
+    // Post-agent failures are logged server-side but NOT emitted as error_message,
+    // so result_message remains the sole terminal on the wire. Otherwise a
+    // client would treat the error_message as terminal and never see the result.
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message_type: "error_message" }),
     );
   });
 
@@ -238,7 +236,7 @@ describe("InvocationRunner", () => {
     });
   });
 
-  it("sends error message and throws when command exits non-zero", async () => {
+  it("throws when pre-agent command exits non-zero; caller decides wire error", async () => {
     mockExecute.mockResolvedValueOnce({ exitCode: 2 });
     const { runner, message, send, logger } = createRunner({
       pre_agent_invocation_commands: [{ command: "false", cwd: "/app" }],
@@ -251,11 +249,11 @@ describe("InvocationRunner", () => {
     expect(logger.error).toHaveBeenCalledWith(
       "pre-agent command failed with exit code: 2",
     );
-    expect(send).toHaveBeenCalledWith({
-      message_type: "error_message",
-      error: "pre-agent command failed with exit code: 2",
-      metadata: {},
-    });
+    // runner no longer emits error_message itself; the caller (session) does
+    // so that exactly one terminal is sent per request.
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message_type: "error_message" }),
+    );
     expect(mockHandlerRun).not.toHaveBeenCalled();
   });
 
