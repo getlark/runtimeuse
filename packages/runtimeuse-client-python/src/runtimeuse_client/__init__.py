@@ -1,5 +1,11 @@
-from .client import RuntimeUseClient
-from .transports import Transport, WebSocketTransport
+from .client import RuntimeUseClient, RuntimeUseSession
+from .transports import (
+    ConnectedTransport,
+    ConnectedWebSocketTransport,
+    PersistentTransport,
+    Transport,
+    WebSocketTransport,
+)
 from .exceptions import AgentRuntimeError, CancelledException
 from .types import (
     AgentRuntimeMessageInterface,
@@ -21,6 +27,7 @@ from .types import (
     ArtifactUploadResponseMessageInterface,
     ErrorMessageInterface,
     CancelMessage,
+    EndSessionMessage,
     ArtifactUploadResult,
     OnAssistantMessageCallback,
     OnArtifactUploadRequestCallback,
@@ -28,6 +35,10 @@ from .types import (
 
 __all__ = [
     "RuntimeUseClient",
+    "RuntimeUseSession",
+    "ConnectedTransport",
+    "ConnectedWebSocketTransport",
+    "PersistentTransport",
     "Transport",
     "WebSocketTransport",
     "AgentRuntimeError",
@@ -51,6 +62,7 @@ __all__ = [
     "ArtifactUploadResponseMessageInterface",
     "ErrorMessageInterface",
     "CancelMessage",
+    "EndSessionMessage",
     "ArtifactUploadResult",
     "OnAssistantMessageCallback",
     "OnArtifactUploadRequestCallback",
