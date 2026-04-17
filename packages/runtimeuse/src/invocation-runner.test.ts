@@ -167,6 +167,54 @@ describe("InvocationRunner", () => {
     ]);
   });
 
+  it("returns agent result even when a post-agent command fails", async () => {
+    mockHandlerRun.mockResolvedValueOnce({
+      type: "text",
+      text: "agent succeeded",
+      metadata: { duration_ms: 5 },
+    } as AgentResult);
+    mockExecute.mockResolvedValueOnce({ exitCode: 7 });
+
+    const { runner, message, send } = createRunner({
+      output_format_json_schema_str: undefined,
+      post_agent_invocation_commands: [{ command: "cleanup", cwd: "/app" }],
+    });
+
+    const result = await runner.run(message);
+
+    expect(result).toEqual({
+      message_type: "result_message",
+      metadata: { duration_ms: 5 },
+      data: { type: "text", text: "agent succeeded" },
+    });
+    // An error_message is emitted for the post-agent failure so the client is notified,
+    // but the agent's result is still returned as the terminal.
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message_type: "error_message",
+        error: expect.stringContaining("post-agent command failed"),
+      }),
+    );
+  });
+
+  it("returns agent result even when a post-agent command throws", async () => {
+    mockHandlerRun.mockResolvedValueOnce({
+      type: "text",
+      text: "agent succeeded",
+    } as AgentResult);
+    mockExecute.mockRejectedValueOnce(new Error("spawn failed"));
+
+    const { runner, message } = createRunner({
+      output_format_json_schema_str: undefined,
+      post_agent_invocation_commands: [{ command: "cleanup" }],
+    });
+
+    const result = await runner.run(message);
+
+    expect(result.message_type).toBe("result_message");
+    expect((result as any).data.text).toBe("agent succeeded");
+  });
+
   it("forwards command stdout and stderr through assistant messages", async () => {
     mockExecute.mockImplementation(async (options) => {
       options.onStdout?.("stdout data");

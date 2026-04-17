@@ -1,4 +1,5 @@
 import type { AgentHandler, MessageSender } from "./agent-handler.js";
+import { getErrorMessage, serializeErrorMetadata } from "./error-utils.js";
 import type {
   InvocationMessage,
   CommandExecutionMessage,
@@ -61,11 +62,23 @@ export class InvocationRunner {
       sender,
     );
 
-    await this.runCommands(
-      message.post_agent_invocation_commands,
-      "post-agent",
-      message.secrets_to_redact,
-    );
+    try {
+      await this.runCommands(
+        message.post_agent_invocation_commands,
+        "post-agent",
+        message.secrets_to_redact,
+      );
+    } catch (error) {
+      logger.error(
+        "Post-agent command failed; agent result will still be returned:",
+        error,
+      );
+      this.config.send({
+        message_type: "error_message",
+        error: getErrorMessage(error),
+        metadata: serializeErrorMetadata(error),
+      });
+    }
 
     return {
       message_type: "result_message",
