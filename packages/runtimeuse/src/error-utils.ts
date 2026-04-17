@@ -1,3 +1,5 @@
+import { redactSecrets } from "./utils.js";
+
 const MAX_DEPTH = 4;
 const MAX_ARRAY_ITEMS = 20;
 const MAX_OBJECT_KEYS = 20;
@@ -111,6 +113,29 @@ export function serializeErrorMetadata(error: unknown): Record<string, unknown> 
   }
 
   return { error_type: typeof error };
+}
+
+export function redactError(error: unknown, secrets: string[]): unknown {
+  if (secrets.length === 0) return error;
+
+  if (error instanceof Error) {
+    const redacted = new Error(redactSecrets(error.message, secrets));
+    redacted.name = error.name;
+    if (error.stack) {
+      redacted.stack = redactSecrets(error.stack, secrets);
+    }
+    if (error.cause !== undefined) {
+      redacted.cause = redactError(error.cause, secrets);
+    }
+    for (const [key, val] of Object.entries(error)) {
+      if (!["name", "message", "stack", "cause"].includes(key)) {
+        (redacted as unknown as Record<string, unknown>)[key] = redactSecrets(val, secrets);
+      }
+    }
+    return redacted;
+  }
+
+  return redactSecrets(error, secrets);
 }
 
 export function withErrorMetadata(

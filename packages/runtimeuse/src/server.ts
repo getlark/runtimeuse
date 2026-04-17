@@ -3,6 +3,7 @@ import type { AgentHandler } from "./agent-handler.js";
 import { WebSocketSession, type SessionConfig } from "./session.js";
 import { UploadTracker } from "./upload-tracker.js";
 import { defaultLogger, type Logger } from "./logger.js";
+import { serializeErrorMetadata } from "./error-utils.js";
 
 export interface RuntimeUseServerConfig {
   handler: AgentHandler;
@@ -11,6 +12,7 @@ export interface RuntimeUseServerConfig {
   artifactWaitMs?: number;
   postInvocationDelayMs?: number;
   logger?: Logger;
+  onError?: (error: unknown, metadata: Record<string, unknown>) => void;
 }
 
 export class RuntimeUseServer {
@@ -37,10 +39,19 @@ export class RuntimeUseServer {
       artifactWaitMs: this.config.artifactWaitMs,
       postInvocationDelayMs: this.config.postInvocationDelayMs,
       logger: this.config.logger,
+      onError: this.config.onError,
     };
     const session = new WebSocketSession(ws, sessionConfig);
     session.run().catch((error) => {
       this.logger.error("Session error:", error);
+      try {
+        this.config.onError?.(error, {
+          ...serializeErrorMetadata(error),
+          phase: "session",
+        });
+      } catch {
+        // onError must not propagate
+      }
     });
   }
 
