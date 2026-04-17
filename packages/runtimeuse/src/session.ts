@@ -68,7 +68,19 @@ export class WebSocketSession {
         }
         this.logger.log("WebSocket connection closed");
         this.currentAbortController?.abort();
+
+        // Give chokidar time to observe files the agent wrote right before
+        // the session ended. Without this, late `add` events would not fire
+        // before we stop the watcher, and those artifacts would be lost.
+        const delayMs = this.config.postInvocationDelayMs ?? 3_000;
+        if (this.artifactManager && delayMs > 0) {
+          this.logger.log(`Waiting ${delayMs}ms for artifact watcher to drain...`);
+          await sleep(delayMs);
+        }
         await this.artifactManager?.stopWatching();
+        await this.artifactManager?.waitForPendingRequests(
+          this.config.artifactWaitMs ?? 60_000,
+        );
         await this.config.uploadTracker.waitForAll(
           this.config.uploadTimeoutMs ?? 30_000,
         );
@@ -140,7 +152,10 @@ export class WebSocketSession {
     this.config.uploadTracker.setLogger(this.logger);
     this.logger.log("Handling new request");
 
-    this.initArtifactManager(message.artifacts_dir);
+    if (message.artifacts_dir) {
+      this.ensureArtifactManager();
+      this.artifactManager!.addDirectory(message.artifacts_dir);
+    }
 
     const runner = new InvocationRunner({
       handler: this.config.handler,
@@ -154,6 +169,18 @@ export class WebSocketSession {
       this.requestInFlight = true;
       try {
         terminal = await runFn(runner);
+        if (abortController.signal.aborted) {
+          // Runner may return a partial result after abort (e.g., a command
+          // exits with a non-numeric code). Replace with a cancel terminal
+          // so the client sees exactly one error_message for the cancelled
+          // request, consistent with the throw path below.
+          this.logger.log("Request aborted (runner returned); emitting cancel terminal.");
+          terminal = {
+            message_type: "error_message",
+            error: "Request cancelled",
+            metadata: {},
+          };
+        }
       } catch (error) {
         if (abortController.signal.aborted) {
           this.logger.log("Request aborted.");
@@ -172,39 +199,24 @@ export class WebSocketSession {
         }
       }
 
-      const hasArtifacts = this.artifactManager !== null;
-      if (process.env.NODE_ENV !== "test" || hasArtifacts) {
-        this.logger.log("Waiting for post-invocation delay...");
-        await sleep(this.config.postInvocationDelayMs ?? 3_000);
-      }
-
-      try {
-        await this.artifactManager?.stopWatching();
-        if (!abortController.signal.aborted) {
-          await this.artifactManager?.waitForPendingRequests(
-            this.config.artifactWaitMs ?? 60_000,
-          );
-        }
-        await this.config.uploadTracker.waitForAll(
-          this.config.uploadTimeoutMs ?? 30_000,
-        );
-      } catch (error) {
-        this.logger.error("Error draining request artifacts:", error);
-      }
-      this.logger.log("Request artifacts drained.");
-
+      // The artifact watcher stays alive for the whole session, so we no
+      // longer block each request on a 3s drain. Artifacts that finish
+      // writing after the terminal will still fire chokidar events and be
+      // uploaded; on session close we do a single drain for any that were
+      // written right before the ws closed.
       this.send(terminal);
     } finally {
-      this.artifactManager = null;
       this.currentAbortController = null;
       this.requestInFlight = false;
     }
   }
 
-  private initArtifactManager(artifactsDir?: string): void {
-    if (!artifactsDir) return;
+  private ensureArtifactManager(): void {
+    if (this.artifactManager) {
+      this.artifactManager.setLogger(this.logger);
+      return;
+    }
     this.artifactManager = new ArtifactManager({
-      artifactsDir,
       uploadTracker: this.config.uploadTracker,
       send: (msg) => this.send(msg),
     });

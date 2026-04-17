@@ -95,15 +95,19 @@ async def _run_request_loop(
 ):
     """Drive the message loop for a single request and return the terminal result.
 
-    Iterates ``message_iter`` until it sees a terminal (result or error) message
-    or ``abort_event`` is set. Raises ``AgentRuntimeError`` on error messages,
-    ``CancelledException`` on abort.
+    Iterates ``message_iter`` until it sees a terminal message. Even if
+    ``abort_event`` is set mid-request, the loop keeps reading until the
+    server's terminal arrives — otherwise, on a persistent session, the
+    server's ``error_message`` for the cancelled request would leak into the
+    next ``request()`` and cause the follow-up call to spuriously raise.
+
+    Raises ``AgentRuntimeError`` on error terminals, ``CancelledException``
+    if the caller aborted (after the server's terminal has been drained).
     """
     wire_result = None
-    async for message in message_iter:
-        if abort_event.is_set():
-            raise CancelledException(cancelled_message)
+    error_to_raise: AgentRuntimeError | None = None
 
+    async for message in message_iter:
         try:
             message_interface = AgentRuntimeMessageInterface.model_validate(message)
         except pydantic.ValidationError:
@@ -119,12 +123,6 @@ async def _run_request_loop(
             )
             break
 
-        if message_interface.message_type == "assistant_message":
-            if on_assistant_message is not None:
-                assistant = AssistantMessageInterface.model_validate(message)
-                await on_assistant_message(assistant)
-            continue
-
         if message_interface.message_type == "error_message":
             try:
                 err = ErrorMessageInterface.model_validate(message)
@@ -132,9 +130,23 @@ async def _run_request_loop(
                 logger.error(
                     f"Received malformed error message from agent runtime: {message}"
                 )
-                raise AgentRuntimeError(str(message))
-            logger.error(f"Error from agent runtime: {err}")
-            raise AgentRuntimeError(err.error, metadata=err.metadata)
+                error_to_raise = AgentRuntimeError(str(message))
+            else:
+                logger.error(f"Error from agent runtime: {err}")
+                error_to_raise = AgentRuntimeError(err.error, metadata=err.metadata)
+            break
+
+        # Side-effectful handlers are suppressed once the caller has aborted:
+        # we still keep reading so we consume the terminal, but we don't fire
+        # callbacks or respond to artifact handshakes for a dead request.
+        if abort_event.is_set():
+            continue
+
+        if message_interface.message_type == "assistant_message":
+            if on_assistant_message is not None:
+                assistant = AssistantMessageInterface.model_validate(message)
+                await on_assistant_message(assistant)
+            continue
 
         if message_interface.message_type == "artifact_upload_request_message":
             await _handle_artifact_request(
@@ -148,6 +160,9 @@ async def _run_request_loop(
 
     if abort_event.is_set():
         raise CancelledException(cancelled_message)
+
+    if error_to_raise is not None:
+        raise error_to_raise
 
     if wire_result is None:
         raise AgentRuntimeError("No result message received")

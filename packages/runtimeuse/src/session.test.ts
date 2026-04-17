@@ -4,6 +4,7 @@ import { WebSocket } from "ws";
 
 const mockArtifactManager = {
   setLogger: vi.fn(),
+  addDirectory: vi.fn(),
   handleUploadResponse: vi.fn().mockResolvedValue(undefined),
   waitForPendingRequests: vi.fn().mockResolvedValue(undefined),
   stopWatching: vi.fn().mockResolvedValue(undefined),
@@ -138,6 +139,8 @@ const INVOCATION_MSG = {
 describe("WebSocketSession", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHandlerRun.mockReset();
+    mockCommandExecute.mockReset();
 
     mockHandlerRun.mockResolvedValue({
       type: "structured_output",
@@ -379,17 +382,22 @@ describe("WebSocketSession", () => {
   });
 
   describe("finalization", () => {
-    it("stops the artifact watcher", async () => {
+    it("stops the artifact watcher on session close, not per request", async () => {
       const { session, ws } = createSession();
       const done = session.run();
+
       sendMessage(ws, INVOCATION_MSG);
       await waitForTerminal(ws);
+
+      // Watcher must still be running between requests.
+      expect(mockArtifactManager.stopWatching).not.toHaveBeenCalled();
+
       await endSession(ws, done);
 
       expect(mockArtifactManager.stopWatching).toHaveBeenCalled();
     });
 
-    it("waits for pending artifact requests", async () => {
+    it("waits for pending artifact requests on session close", async () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, INVOCATION_MSG);
@@ -399,6 +407,20 @@ describe("WebSocketSession", () => {
       expect(mockArtifactManager.waitForPendingRequests).toHaveBeenCalledWith(
         60_000,
       );
+    });
+
+    it("registers each request's artifacts_dir on the shared watcher", async () => {
+      const { session, ws } = createSession();
+      const done = session.run();
+
+      sendMessage(ws, { ...INVOCATION_MSG, artifacts_dir: "/tmp/first" });
+      await waitForTerminal(ws, 1);
+      sendMessage(ws, { ...INVOCATION_MSG, artifacts_dir: "/tmp/second" });
+      await waitForTerminal(ws, 2);
+      await endSession(ws, done);
+
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/first");
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/second");
     });
   });
 
@@ -580,43 +602,6 @@ describe("WebSocketSession", () => {
       for (const msg of sent) {
         expect(JSON.stringify(msg)).not.toContain("secret123");
       }
-    });
-
-    it("remains usable for a follow-up request when artifact cleanup throws", async () => {
-      mockArtifactManager.stopWatching
-        .mockRejectedValueOnce(new Error("watcher blew up"))
-        .mockResolvedValue(undefined);
-      mockCommandExecute
-        .mockResolvedValueOnce({ exitCode: 0 })
-        .mockResolvedValueOnce({ exitCode: 0 });
-
-      const { session, ws } = createSession();
-      const done = session.run();
-
-      sendMessage(ws, {
-        ...COMMAND_EXEC_MSG,
-        commands: [{ command: "first" }],
-      });
-      await waitForTerminal(ws, 1);
-
-      sendMessage(ws, {
-        ...COMMAND_EXEC_MSG,
-        commands: [{ command: "second" }],
-      });
-      await waitForTerminal(ws, 2);
-
-      const sent = parseSentMessages(ws);
-      const results = sent.filter(
-        (m) => m.message_type === "command_execution_result_message",
-      );
-      expect(results).toHaveLength(2);
-      expect(results[1].results[0].command).toBe("second");
-
-      // The "in flight" error must not have been raised for the second request.
-      const errors = sent.filter((m) => m.message_type === "error_message");
-      expect(errors.some((e) => e.error.includes("in flight"))).toBe(false);
-
-      await endSession(ws, done);
     });
 
     it("handles two sequential command_execution_messages on one socket", async () => {

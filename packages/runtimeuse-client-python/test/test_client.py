@@ -950,3 +950,92 @@ class TestPersistentSession:
             await session.query(prompt="hi", options=make_query_options())
 
         assert transport.closed is True
+
+
+class _StaleBufferTransport:
+    """Simulates a real WebSocket: a single FIFO feeds all request() calls.
+
+    If a request() generator is closed early (e.g., the client aborts), any
+    messages not yet consumed stay in the buffer and are the first thing the
+    next request() sees. This mirrors real websockets library behaviour.
+    """
+
+    def __init__(self, messages: list[dict]):
+        self._queue: asyncio.Queue[dict] = asyncio.Queue()
+        for m in messages:
+            self._queue.put_nowait(m)
+        self.sent: list[dict] = []
+        self.closed = False
+
+    def _drain_send(self, send_queue: asyncio.Queue[dict]) -> None:
+        while not send_queue.empty():
+            self.sent.append(send_queue.get_nowait())
+            send_queue.task_done()
+
+    async def request(self, send_queue: asyncio.Queue[dict]):
+        try:
+            while True:
+                self._drain_send(send_queue)
+                if self._queue.empty():
+                    return
+                yield self._queue.get_nowait()
+        finally:
+            self._drain_send(send_queue)
+
+    async def close(self) -> None:
+        self.closed = True
+
+    def connect(self):
+        transport = self
+
+        class _Ctx:
+            async def __aenter__(self):
+                return transport
+
+            async def __aexit__(self, exc_type, exc, tb):
+                await transport.close()
+
+        return _Ctx()
+
+
+class TestStaleTerminalDraining:
+    @pytest.mark.asyncio
+    async def test_cancelled_request_drains_server_terminal_before_next_call(
+        self, make_query_options
+    ):
+        # Scenario: request 1 is aborted mid-flight. The server processes the
+        # cancel and sends an error_message terminal. That terminal must be
+        # consumed by request 1's loop - NOT leak into request 2.
+        filler = {"message_type": "assistant_message", "text_blocks": ["tick"]}
+        cancel_terminal = {
+            "message_type": "error_message",
+            "error": "Request cancelled",
+            "metadata": {},
+        }
+        result_after = {
+            "message_type": "result_message",
+            "data": {"type": "text", "text": "clean"},
+            "metadata": None,
+        }
+
+        transport = _StaleBufferTransport(
+            [filler, cancel_terminal, result_after]
+        )
+        client = RuntimeUseClient(transport=transport)
+
+        async with client.session() as session:
+            async def abort_on_first(_msg):
+                session.abort()
+
+            with pytest.raises(CancelledException):
+                await session.query(
+                    prompt="one",
+                    options=make_query_options(on_assistant_message=abort_on_first),
+                )
+
+            # Second request must NOT see the stale cancel_terminal.
+            second = await session.query(
+                prompt="two", options=make_query_options()
+            )
+
+        assert second.data.text == "clean"

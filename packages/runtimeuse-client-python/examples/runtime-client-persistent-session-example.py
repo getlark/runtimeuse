@@ -14,7 +14,11 @@ from src.runtimeuse_client import (
 )
 
 
-class Answer(BaseModel):
+class FrenchWordsAnswer(BaseModel):
+    words: list[str]
+
+
+class PopulationAnswer(BaseModel):
     population: int
 
 
@@ -46,7 +50,10 @@ async def main():
                         )
                     ],
                     output_format_json_schema_str=json.dumps(
-                        {"type": "json_schema", "schema": Answer.model_json_schema()}
+                        {
+                            "type": "json_schema",
+                            "schema": PopulationAnswer.model_json_schema(),
+                        }
                     ),
                     source_id="my-source",
                     on_assistant_message=on_assistant_message,
@@ -74,6 +81,22 @@ async def main():
                     options=ExecuteCommandsOptions(),
                 )
                 print(f"Command result: {result}")
+                result = await session.query(
+                    prompt="Give me 6 french words",
+                    options=QueryOptions(
+                        system_prompt="You are a helpful assistant.",
+                        model="gpt-5.4",
+                        output_format_json_schema_str=json.dumps(
+                            {
+                                "type": "json_schema",
+                                "schema": FrenchWordsAnswer.model_json_schema(),
+                            }
+                        ),
+                    ),
+                )
+                assert isinstance(result.data, StructuredOutputResult)
+                french_words = result.data.structured_output["words"]
+                print(f"French words: {french_words}")
     except AgentRuntimeError as e:
         print(f"Error: {e.error}")
 
