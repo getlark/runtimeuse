@@ -167,50 +167,21 @@ describe("InvocationRunner", () => {
     ]);
   });
 
-  it("returns agent result even when a post-agent command fails", async () => {
+  it("throws when a post-agent command exits non-zero", async () => {
     mockHandlerRun.mockResolvedValueOnce({
       type: "text",
       text: "agent succeeded",
-      metadata: { duration_ms: 5 },
     } as AgentResult);
     mockExecute.mockResolvedValueOnce({ exitCode: 7 });
 
-    const { runner, message, send } = createRunner({
+    const { runner, message } = createRunner({
       output_format_json_schema_str: undefined,
       post_agent_invocation_commands: [{ command: "cleanup", cwd: "/app" }],
     });
 
-    const result = await runner.run(message);
-
-    expect(result).toEqual({
-      message_type: "result_message",
-      metadata: { duration_ms: 5 },
-      data: { type: "text", text: "agent succeeded" },
-    });
-    // Post-agent failures are logged server-side but NOT emitted as error_message,
-    // so result_message remains the sole terminal on the wire. Otherwise a
-    // client would treat the error_message as terminal and never see the result.
-    expect(send).not.toHaveBeenCalledWith(
-      expect.objectContaining({ message_type: "error_message" }),
+    await expect(runner.run(message)).rejects.toThrow(
+      "post-agent command failed with exit code: 7",
     );
-  });
-
-  it("returns agent result even when a post-agent command throws", async () => {
-    mockHandlerRun.mockResolvedValueOnce({
-      type: "text",
-      text: "agent succeeded",
-    } as AgentResult);
-    mockExecute.mockRejectedValueOnce(new Error("spawn failed"));
-
-    const { runner, message } = createRunner({
-      output_format_json_schema_str: undefined,
-      post_agent_invocation_commands: [{ command: "cleanup" }],
-    });
-
-    const result = await runner.run(message);
-
-    expect(result.message_type).toBe("result_message");
-    expect((result as any).data.text).toBe("agent succeeded");
   });
 
   it("forwards command stdout and stderr through assistant messages", async () => {

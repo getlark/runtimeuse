@@ -61,18 +61,11 @@ export class InvocationRunner {
       sender,
     );
 
-    try {
-      await this.runCommands(
-        message.post_agent_invocation_commands,
-        "post-agent",
-        message.secrets_to_redact,
-      );
-    } catch (error) {
-      logger.error(
-        "Post-agent command failed; agent result will still be returned:",
-        error,
-      );
-    }
+    await this.runCommands(
+      message.post_agent_invocation_commands,
+      "post-agent",
+      message.secrets_to_redact,
+    );
 
     return {
       message_type: "result_message",
