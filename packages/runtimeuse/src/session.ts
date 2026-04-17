@@ -34,7 +34,6 @@ export class WebSocketSession {
   private currentAbortController: AbortController | null = null;
   private artifactManager: ArtifactManager | null = null;
   private requestInFlight = false;
-  private sessionClosed = false;
   private secrets: string[] = [];
   private logger: Logger;
 
@@ -68,7 +67,6 @@ export class WebSocketSession {
           );
         }
         this.logger.log("WebSocket connection closed");
-        this.sessionClosed = true;
         this.currentAbortController?.abort();
         await this.artifactManager?.stopWatching();
         await this.config.uploadTracker.waitForAll(
@@ -91,7 +89,9 @@ export class WebSocketSession {
         return;
 
       case "cancel_message":
-        this.logger.log("Received cancel message. Aborting in-flight request...");
+        this.logger.log(
+          "Received cancel message. Aborting in-flight request...",
+        );
         this.currentAbortController?.abort();
         return;
 
@@ -131,7 +131,6 @@ export class WebSocketSession {
     runFn: (runner: InvocationRunner) => Promise<OutgoingMessage>,
     message: InvocationMessage | CommandExecutionMessage,
   ): Promise<void> {
-    this.requestInFlight = true;
     const abortController = new AbortController();
     this.currentAbortController = abortController;
 
@@ -152,6 +151,7 @@ export class WebSocketSession {
 
     let terminal: OutgoingMessage;
     try {
+      this.requestInFlight = true;
       try {
         terminal = await runFn(runner);
       } catch (error) {
