@@ -152,47 +152,53 @@ export class WebSocketSession {
 
     let terminal: OutgoingMessage;
     try {
-      terminal = await runFn(runner);
-    } catch (error) {
-      if (abortController.signal.aborted) {
-        this.logger.log("Request aborted.");
-        terminal = {
-          message_type: "error_message",
-          error: "Request cancelled",
-          metadata: {},
-        };
-      } else {
-        this.logger.error("Error in request execution:", error);
-        terminal = {
-          message_type: "error_message",
-          error: getErrorMessage(error),
-          metadata: serializeErrorMetadata(error),
-        };
+      try {
+        terminal = await runFn(runner);
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          this.logger.log("Request aborted.");
+          terminal = {
+            message_type: "error_message",
+            error: "Request cancelled",
+            metadata: {},
+          };
+        } else {
+          this.logger.error("Error in request execution:", error);
+          terminal = {
+            message_type: "error_message",
+            error: getErrorMessage(error),
+            metadata: serializeErrorMetadata(error),
+          };
+        }
       }
+
+      const hasArtifacts = this.artifactManager !== null;
+      if (process.env.NODE_ENV !== "test" || hasArtifacts) {
+        this.logger.log("Waiting for post-invocation delay...");
+        await sleep(this.config.postInvocationDelayMs ?? 3_000);
+      }
+
+      try {
+        await this.artifactManager?.stopWatching();
+        if (!abortController.signal.aborted) {
+          await this.artifactManager?.waitForPendingRequests(
+            this.config.artifactWaitMs ?? 60_000,
+          );
+        }
+        await this.config.uploadTracker.waitForAll(
+          this.config.uploadTimeoutMs ?? 30_000,
+        );
+      } catch (error) {
+        this.logger.error("Error draining request artifacts:", error);
+      }
+      this.logger.log("Request artifacts drained.");
+
+      this.send(terminal);
+    } finally {
+      this.artifactManager = null;
+      this.currentAbortController = null;
+      this.requestInFlight = false;
     }
-
-    const hasArtifacts = this.artifactManager !== null;
-    if (process.env.NODE_ENV !== "test" || hasArtifacts) {
-      this.logger.log("Waiting for post-invocation delay...");
-      await sleep(this.config.postInvocationDelayMs ?? 3_000);
-    }
-
-    await this.artifactManager?.stopWatching();
-    if (!abortController.signal.aborted) {
-      await this.artifactManager?.waitForPendingRequests(
-        this.config.artifactWaitMs ?? 60_000,
-      );
-    }
-    await this.config.uploadTracker.waitForAll(
-      this.config.uploadTimeoutMs ?? 30_000,
-    );
-    this.logger.log("Request artifacts drained.");
-
-    this.send(terminal);
-
-    this.artifactManager = null;
-    this.currentAbortController = null;
-    this.requestInFlight = false;
   }
 
   private initArtifactManager(artifactsDir?: string): void {

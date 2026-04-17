@@ -582,6 +582,43 @@ describe("WebSocketSession", () => {
       }
     });
 
+    it("remains usable for a follow-up request when artifact cleanup throws", async () => {
+      mockArtifactManager.stopWatching
+        .mockRejectedValueOnce(new Error("watcher blew up"))
+        .mockResolvedValue(undefined);
+      mockCommandExecute
+        .mockResolvedValueOnce({ exitCode: 0 })
+        .mockResolvedValueOnce({ exitCode: 0 });
+
+      const { session, ws } = createSession();
+      const done = session.run();
+
+      sendMessage(ws, {
+        ...COMMAND_EXEC_MSG,
+        commands: [{ command: "first" }],
+      });
+      await waitForTerminal(ws, 1);
+
+      sendMessage(ws, {
+        ...COMMAND_EXEC_MSG,
+        commands: [{ command: "second" }],
+      });
+      await waitForTerminal(ws, 2);
+
+      const sent = parseSentMessages(ws);
+      const results = sent.filter(
+        (m) => m.message_type === "command_execution_result_message",
+      );
+      expect(results).toHaveLength(2);
+      expect(results[1].results[0].command).toBe("second");
+
+      // The "in flight" error must not have been raised for the second request.
+      const errors = sent.filter((m) => m.message_type === "error_message");
+      expect(errors.some((e) => e.error.includes("in flight"))).toBe(false);
+
+      await endSession(ws, done);
+    });
+
     it("handles two sequential command_execution_messages on one socket", async () => {
       mockCommandExecute
         .mockResolvedValueOnce({ exitCode: 0 })
