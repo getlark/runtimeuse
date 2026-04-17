@@ -188,11 +188,22 @@ export class WebSocketSession {
         }
       }
 
-      // The artifact watcher stays alive for the whole session, so we no
-      // longer block each request on a 3s drain. Artifacts that finish
-      // writing after the terminal will still fire chokidar events and be
-      // uploaded; on session close we do a single drain for any that were
-      // written right before the ws closed.
+      // Settle any artifacts written by this request before sending the
+      // terminal. Chokidar's awaitWriteFinish delays `add` events by ~2s,
+      // and the server typically closes the socket immediately after we
+      // respond — so artifacts requested *after* the terminal would never
+      // get their upload response back. Wait for chokidar to catch up, then
+      // wait for the upload round-trips we've queued.
+      if (this.artifactManager) {
+        const delayMs = this.config.postInvocationDelayMs ?? 3_000;
+        if (delayMs > 0) {
+          this.logger.log(`Waiting ${delayMs}ms for artifacts to settle...`);
+          await sleep(delayMs);
+        }
+        await this.artifactManager.waitForPendingRequests(
+          this.config.artifactWaitMs ?? 60_000,
+        );
+      }
       this.send(terminal);
     } finally {
       this.currentAbortController = null;
