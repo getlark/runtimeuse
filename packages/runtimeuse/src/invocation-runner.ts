@@ -3,7 +3,9 @@ import type {
   InvocationMessage,
   CommandExecutionMessage,
   CommandExecutionResultItem,
+  CommandExecutionResultMessage,
   OutgoingMessage,
+  ResultMessage,
   RuntimeEnvironmentDownloadable,
   Command,
 } from "./types.js";
@@ -27,8 +29,8 @@ export class InvocationRunner {
     this.downloadHandler = new DownloadHandler(config.logger);
   }
 
-  async run(message: InvocationMessage): Promise<void> {
-    const { handler, logger, abortController, send } = this.config;
+  async run(message: InvocationMessage): Promise<ResultMessage> {
+    const { handler, logger, abortController } = this.config;
 
     await this.downloadRuntimeEnvironment(message.pre_agent_downloadables);
     await this.runCommands(
@@ -59,7 +61,13 @@ export class InvocationRunner {
       sender,
     );
 
-    const resultMessage: OutgoingMessage = {
+    await this.runCommands(
+      message.post_agent_invocation_commands,
+      "post-agent",
+      message.secrets_to_redact,
+    );
+
+    return {
       message_type: "result_message",
       metadata: agentResult.metadata ?? {},
       data:
@@ -70,19 +78,12 @@ export class InvocationRunner {
               structured_output: agentResult.structuredOutput,
             },
     };
-
-    logger.log("Sending result message:", JSON.stringify(resultMessage));
-    send(resultMessage);
-
-    await this.runCommands(
-      message.post_agent_invocation_commands,
-      "post-agent",
-      message.secrets_to_redact,
-    );
   }
 
-  async runCommandsOnly(message: CommandExecutionMessage): Promise<void> {
-    const { logger, send } = this.config;
+  async runCommandsOnly(
+    message: CommandExecutionMessage,
+  ): Promise<CommandExecutionResultMessage> {
+    const { logger } = this.config;
 
     await this.downloadRuntimeEnvironment(message.pre_execution_downloadables);
 
@@ -101,15 +102,7 @@ export class InvocationRunner {
       }
     }
 
-    const resultMessage: OutgoingMessage = {
-      message_type: "command_execution_result_message",
-      results,
-    };
-    logger.log(
-      "Sending command execution result:",
-      JSON.stringify(resultMessage),
-    );
-    send(resultMessage);
+    return { message_type: "command_execution_result_message", results };
   }
 
   private async runCommandAndCollect(
@@ -184,7 +177,6 @@ export class InvocationRunner {
       if (result.exitCode !== 0) {
         const errorMsg = `${phase} command failed with exit code: ${result.exitCode}`;
         logger.error(errorMsg);
-        send({ message_type: "error_message", error: errorMsg, metadata: {} });
         throw new Error(errorMsg);
       }
     }

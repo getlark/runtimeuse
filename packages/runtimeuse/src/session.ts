@@ -3,10 +3,20 @@ import { WebSocket } from "ws";
 import type { AgentHandler } from "./agent-handler.js";
 import { ArtifactManager } from "./artifact-manager.js";
 import type { UploadTracker } from "./upload-tracker.js";
-import type { InvocationMessage, CommandExecutionMessage, IncomingMessage, OutgoingMessage } from "./types.js";
+import type {
+  InvocationMessage,
+  CommandExecutionMessage,
+  IncomingMessage,
+  OutgoingMessage,
+} from "./types.js";
 import { getErrorMessage, serializeErrorMetadata } from "./error-utils.js";
 import { redactSecrets, sleep } from "./utils.js";
-import { createLogger, createRedactingLogger, defaultLogger, type Logger } from "./logger.js";
+import {
+  createLogger,
+  createRedactingLogger,
+  defaultLogger,
+  type Logger,
+} from "./logger.js";
 import { InvocationRunner } from "./invocation-runner.js";
 
 export interface SessionConfig {
@@ -21,11 +31,9 @@ export interface SessionConfig {
 export class WebSocketSession {
   private readonly ws: WebSocket;
   private readonly config: SessionConfig;
-  private readonly abortController = new AbortController();
+  private currentAbortController: AbortController | null = null;
   private artifactManager: ArtifactManager | null = null;
-  private invocationReceived = false;
-  private finalized = false;
-  private cancelled = false;
+  private requestInFlight = false;
   private secrets: string[] = [];
   private logger: Logger;
 
@@ -41,7 +49,7 @@ export class WebSocketSession {
         this.logger.log("Received new WS message");
         try {
           const message: IncomingMessage = JSON.parse(rawData.toString());
-          await this.handleMessage(message, resolve);
+          await this.handleMessage(message);
         } catch (error) {
           this.logger.error("Error processing message:", error);
           this.send({
@@ -53,14 +61,26 @@ export class WebSocketSession {
       });
 
       this.ws.on("close", async (code, reason) => {
-        if (!this.finalized && !this.cancelled) {
+        if (this.requestInFlight) {
           this.logger.warn(
-            `WebSocket closed unexpectedly (code=${code}, reason=${reason?.toString() ?? ""}). Artifacts may not have been fully uploaded.`,
+            `WebSocket closed unexpectedly mid-request (code=${code}, reason=${reason?.toString() ?? ""}). Artifacts may not have been fully uploaded.`,
           );
         }
         this.logger.log("WebSocket connection closed");
-        this.abortController.abort();
+        this.currentAbortController?.abort();
+
+        // Give chokidar time to observe files the agent wrote right before
+        // the session ended. Without this, late `add` events would not fire
+        // before we stop the watcher, and those artifacts would be lost.
+        const delayMs = this.config.postInvocationDelayMs ?? 3_000;
+        if (this.artifactManager && delayMs > 0) {
+          this.logger.log(`Waiting ${delayMs}ms for artifact watcher to drain...`);
+          await sleep(delayMs);
+        }
         await this.artifactManager?.stopWatching();
+        await this.artifactManager?.waitForPendingRequests(
+          this.config.artifactWaitMs ?? 60_000,
+        );
         await this.config.uploadTracker.waitForAll(
           this.config.uploadTimeoutMs ?? 30_000,
         );
@@ -73,22 +93,20 @@ export class WebSocketSession {
     });
   }
 
-  private async handleMessage(
-    message: IncomingMessage,
-    resolve: () => void,
-  ): Promise<void> {
-    if (
-      !this.invocationReceived &&
-      message.message_type !== "invocation_message" &&
-      message.message_type !== "command_execution_message"
-    ) {
-      throw new Error(
-        "Received non-invocation message before invocation message! Received: " +
-        JSON.stringify(message),
-      );
-    }
-
+  private async handleMessage(message: IncomingMessage): Promise<void> {
     switch (message.message_type) {
+      case "end_session_message":
+        this.logger.log("Received end_session_message. Closing session.");
+        this.ws.close();
+        return;
+
+      case "cancel_message":
+        this.logger.log(
+          "Received cancel message. Aborting in-flight request...",
+        );
+        this.currentAbortController?.abort();
+        return;
+
       case "artifact_upload_response_message":
         try {
           await this.artifactManager?.handleUploadResponse(message);
@@ -100,138 +118,109 @@ export class WebSocketSession {
             metadata: serializeErrorMetadata(error),
           });
         }
-        break;
-
-      case "cancel_message":
-        this.logger.log("Received cancel message. Aborting agent execution...");
-        this.cancelled = true;
-        this.abortController.abort();
-        this.ws.close();
-        break;
+        return;
 
       case "invocation_message":
-        if (this.invocationReceived) {
-          throw new Error("Received multiple invocation messages!");
+        if (this.requestInFlight) {
+          throw new Error("Received request while another is in flight!");
         }
-        this.invocationReceived = true;
-        await this.executeInvocation(message);
-        const hasArtifacts = this.artifactManager !== null;
-        if (process.env.NODE_ENV !== "test" || hasArtifacts) {
-          this.logger.log("Waiting for post-invocation delay...");
-          await sleep(this.config.postInvocationDelayMs ?? 3_000);
-        }
-        await this.finalize();
-        resolve();
-        break;
+        await this.handleRequest((runner) => runner.run(message), message);
+        return;
 
       case "command_execution_message":
-        if (this.invocationReceived) {
-          throw new Error("Received multiple invocation messages!");
+        if (this.requestInFlight) {
+          throw new Error("Received request while another is in flight!");
         }
-        this.invocationReceived = true;
-        await this.executeCommandsOnly(message);
-        const hasCommandArtifacts = this.artifactManager !== null;
-        if (process.env.NODE_ENV !== "test" || hasCommandArtifacts) {
-          this.logger.log("Waiting for post-invocation delay...");
-          await sleep(this.config.postInvocationDelayMs ?? 3_000);
-        }
-        await this.finalize();
-        resolve();
-        break;
+        await this.handleRequest(
+          (runner) => runner.runCommandsOnly(message),
+          message,
+        );
+        return;
     }
   }
 
-  private async executeInvocation(message: InvocationMessage): Promise<void> {
+  private async handleRequest(
+    runFn: (runner: InvocationRunner) => Promise<OutgoingMessage>,
+    message: InvocationMessage | CommandExecutionMessage,
+  ): Promise<void> {
+    const abortController = new AbortController();
+    this.currentAbortController = abortController;
+
     const sourceId = message.source_id ?? crypto.randomUUID();
     this.secrets = message.secrets_to_redact ?? [];
     this.logger = createRedactingLogger(createLogger(sourceId), this.secrets);
     this.config.uploadTracker.setLogger(this.logger);
-    this.logger.log(`Received invocation: model=${message.model}`);
+    this.logger.log("Handling new request");
 
-    this.initArtifactManager(message.artifacts_dir);
+    if (message.artifacts_dir) {
+      this.ensureArtifactManager();
+      this.artifactManager!.addDirectory(message.artifacts_dir);
+    }
 
     const runner = new InvocationRunner({
       handler: this.config.handler,
       logger: this.logger,
-      abortController: this.abortController,
+      abortController,
       send: (msg) => this.send(msg),
     });
 
+    let terminal: OutgoingMessage;
     try {
-      await runner.run(message);
-    } catch (error) {
-      if (this.abortController.signal.aborted) {
-        this.ws.close();
-        this.logger.log("Agent execution aborted.");
-        return;
+      this.requestInFlight = true;
+      try {
+        terminal = await runFn(runner);
+        if (abortController.signal.aborted) {
+          // Runner may return a partial result after abort (e.g., a command
+          // exits with a non-numeric code). Replace with a cancel terminal
+          // so the client sees exactly one error_message for the cancelled
+          // request, consistent with the throw path below.
+          this.logger.log("Request aborted (runner returned); emitting cancel terminal.");
+          terminal = {
+            message_type: "error_message",
+            error: "Request cancelled",
+            metadata: {},
+          };
+        }
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          this.logger.log("Request aborted.");
+          terminal = {
+            message_type: "error_message",
+            error: "Request cancelled",
+            metadata: {},
+          };
+        } else {
+          this.logger.error("Error in request execution:", error);
+          terminal = {
+            message_type: "error_message",
+            error: getErrorMessage(error),
+            metadata: serializeErrorMetadata(error),
+          };
+        }
       }
-      this.logger.error("Error in agent execution:", error);
-      this.send({
-        message_type: "error_message",
-        error: getErrorMessage(error),
-        metadata: serializeErrorMetadata(error),
-      });
+
+      // The artifact watcher stays alive for the whole session, so we no
+      // longer block each request on a 3s drain. Artifacts that finish
+      // writing after the terminal will still fire chokidar events and be
+      // uploaded; on session close we do a single drain for any that were
+      // written right before the ws closed.
+      this.send(terminal);
+    } finally {
+      this.currentAbortController = null;
+      this.requestInFlight = false;
     }
   }
 
-  private async executeCommandsOnly(message: CommandExecutionMessage): Promise<void> {
-    const sourceId = message.source_id ?? crypto.randomUUID();
-    this.secrets = message.secrets_to_redact ?? [];
-    this.logger = createRedactingLogger(createLogger(sourceId), this.secrets);
-    this.config.uploadTracker.setLogger(this.logger);
-    this.logger.log("Received command execution request");
-
-    this.initArtifactManager(message.artifacts_dir);
-
-    const runner = new InvocationRunner({
-      handler: this.config.handler,
-      logger: this.logger,
-      abortController: this.abortController,
-      send: (msg) => this.send(msg),
-    });
-
-    try {
-      await runner.runCommandsOnly(message);
-    } catch (error) {
-      if (this.abortController.signal.aborted) {
-        this.ws.close();
-        this.logger.log("Command execution aborted.");
-        return;
-      }
-      this.logger.error("Error in command execution:", error);
-      this.send({
-        message_type: "error_message",
-        error: getErrorMessage(error),
-        metadata: serializeErrorMetadata(error),
-      });
+  private ensureArtifactManager(): void {
+    if (this.artifactManager) {
+      this.artifactManager.setLogger(this.logger);
+      return;
     }
-  }
-
-  private initArtifactManager(artifactsDir?: string): void {
-    if (!artifactsDir) return;
     this.artifactManager = new ArtifactManager({
-      artifactsDir,
       uploadTracker: this.config.uploadTracker,
       send: (msg) => this.send(msg),
     });
     this.artifactManager.setLogger(this.logger);
-  }
-
-  private async finalize(): Promise<void> {
-    await this.artifactManager?.stopWatching();
-
-    if (!this.abortController.signal.aborted) {
-      await this.artifactManager?.waitForPendingRequests(
-        this.config.artifactWaitMs ?? 60_000,
-      );
-    }
-
-    await this.config.uploadTracker.waitForAll(
-      this.config.uploadTimeoutMs ?? 30_000,
-    );
-    this.logger.log("All artifacts uploaded.");
-    this.finalized = true;
-    this.ws.close();
   }
 
   private send(data: OutgoingMessage): void {

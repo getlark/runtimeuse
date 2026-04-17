@@ -778,3 +778,264 @@ class TestExecuteCommands:
 
         with pytest.raises(ValueError, match="must be specified together"):
             ExecuteCommandsOptions(on_artifact_upload_request=_dummy_cb)
+
+
+# ---------------------------------------------------------------------------
+# Persistent session
+# ---------------------------------------------------------------------------
+
+
+TEXT_RESULT_MSG_PERSISTENT = {
+    "message_type": "result_message",
+    "data": {"type": "text", "text": "persistent hello"},
+    "metadata": None,
+}
+
+
+class TestPersistentSession:
+    @pytest.mark.asyncio
+    async def test_two_sequential_queries_share_one_connection(
+        self, fake_persistent_transport, make_query_options
+    ):
+        transport, client = fake_persistent_transport(
+            [
+                [
+                    {
+                        "message_type": "result_message",
+                        "data": {"type": "text", "text": "first"},
+                        "metadata": None,
+                    }
+                ],
+                [
+                    {
+                        "message_type": "result_message",
+                        "data": {"type": "text", "text": "second"},
+                        "metadata": None,
+                    }
+                ],
+            ]
+        )
+
+        async with client.session() as session:
+            first = await session.query(
+                prompt="one", options=make_query_options(source_id="a")
+            )
+            second = await session.query(
+                prompt="two", options=make_query_options(source_id="b")
+            )
+
+        assert first.data.text == "first"
+        assert second.data.text == "second"
+        assert transport.closed is True
+
+        invocation_msgs = [
+            m for m in transport.sent if m.get("message_type") == "invocation_message"
+        ]
+        assert [m["source_id"] for m in invocation_msgs] == ["a", "b"]
+
+    @pytest.mark.asyncio
+    async def test_mixed_query_and_execute_commands_in_one_session(
+        self, fake_persistent_transport, make_query_options, make_execute_commands_options
+    ):
+        transport, client = fake_persistent_transport(
+            [
+                [TEXT_RESULT_MSG_PERSISTENT],
+                [
+                    {
+                        "message_type": "command_execution_result_message",
+                        "results": [{"command": "echo x", "exit_code": 0}],
+                    }
+                ],
+            ]
+        )
+
+        async with client.session() as session:
+            query_result = await session.query(
+                prompt="hello", options=make_query_options()
+            )
+            cmd_result = await session.execute_commands(
+                commands=[CommandInterface(command="echo x")],
+                options=make_execute_commands_options(),
+            )
+
+        assert query_result.data.text == "persistent hello"
+        assert cmd_result.results[0].command == "echo x"
+
+    @pytest.mark.asyncio
+    async def test_cancel_mid_session_then_another_call(
+        self, fake_persistent_transport, make_query_options
+    ):
+        filler_msg = {
+            "message_type": "assistant_message",
+            "text_blocks": ["working..."],
+        }
+
+        transport, client = fake_persistent_transport(
+            [
+                [filler_msg, filler_msg],
+                [
+                    {
+                        "message_type": "result_message",
+                        "data": {"type": "text", "text": "after cancel"},
+                        "metadata": None,
+                    }
+                ],
+            ]
+        )
+
+        async with client.session() as session:
+            async def abort_on_first(_msg):
+                session.abort()
+
+            with pytest.raises(CancelledException):
+                await session.query(
+                    prompt="first",
+                    options=make_query_options(on_assistant_message=abort_on_first),
+                )
+
+            second = await session.query(
+                prompt="second", options=make_query_options()
+            )
+
+        assert second.data.text == "after cancel"
+        # The aborted call sent a cancel_message to the server
+        cancel_msgs = [
+            m for m in transport.sent if m.get("message_type") == "cancel_message"
+        ]
+        assert len(cancel_msgs) == 1
+
+    @pytest.mark.asyncio
+    async def test_per_call_abort_targets_in_flight_request_only(
+        self, fake_persistent_transport, make_query_options
+    ):
+        filler_msg = {
+            "message_type": "assistant_message",
+            "text_blocks": ["tick"],
+        }
+
+        transport, client = fake_persistent_transport(
+            [
+                [TEXT_RESULT_MSG_PERSISTENT],
+                [filler_msg, filler_msg],
+            ]
+        )
+
+        async with client.session() as session:
+            first = await session.query(
+                prompt="one", options=make_query_options()
+            )
+            assert first.data.text == "persistent hello"
+
+            async def abort_on_first(_msg):
+                session.abort()
+
+            with pytest.raises(CancelledException):
+                await session.query(
+                    prompt="two",
+                    options=make_query_options(on_assistant_message=abort_on_first),
+                )
+
+        cancel_msgs = [
+            m for m in transport.sent if m.get("message_type") == "cancel_message"
+        ]
+        assert len(cancel_msgs) == 1
+
+    @pytest.mark.asyncio
+    async def test_session_closes_transport_on_exit(
+        self, fake_persistent_transport, make_query_options
+    ):
+        transport, client = fake_persistent_transport([[TEXT_RESULT_MSG_PERSISTENT]])
+
+        async with client.session() as session:
+            await session.query(prompt="hi", options=make_query_options())
+
+        assert transport.closed is True
+
+
+class _StaleBufferTransport:
+    """Simulates a real WebSocket: a single FIFO feeds all request() calls.
+
+    If a request() generator is closed early (e.g., the client aborts), any
+    messages not yet consumed stay in the buffer and are the first thing the
+    next request() sees. This mirrors real websockets library behaviour.
+    """
+
+    def __init__(self, messages: list[dict]):
+        self._queue: asyncio.Queue[dict] = asyncio.Queue()
+        for m in messages:
+            self._queue.put_nowait(m)
+        self.sent: list[dict] = []
+        self.closed = False
+
+    def _drain_send(self, send_queue: asyncio.Queue[dict]) -> None:
+        while not send_queue.empty():
+            self.sent.append(send_queue.get_nowait())
+            send_queue.task_done()
+
+    async def request(self, send_queue: asyncio.Queue[dict]):
+        try:
+            while True:
+                self._drain_send(send_queue)
+                if self._queue.empty():
+                    return
+                yield self._queue.get_nowait()
+        finally:
+            self._drain_send(send_queue)
+
+    async def close(self) -> None:
+        self.closed = True
+
+    def connect(self):
+        transport = self
+
+        class _Ctx:
+            async def __aenter__(self):
+                return transport
+
+            async def __aexit__(self, exc_type, exc, tb):
+                await transport.close()
+
+        return _Ctx()
+
+
+class TestStaleTerminalDraining:
+    @pytest.mark.asyncio
+    async def test_cancelled_request_drains_server_terminal_before_next_call(
+        self, make_query_options
+    ):
+        # Scenario: request 1 is aborted mid-flight. The server processes the
+        # cancel and sends an error_message terminal. That terminal must be
+        # consumed by request 1's loop - NOT leak into request 2.
+        filler = {"message_type": "assistant_message", "text_blocks": ["tick"]}
+        cancel_terminal = {
+            "message_type": "error_message",
+            "error": "Request cancelled",
+            "metadata": {},
+        }
+        result_after = {
+            "message_type": "result_message",
+            "data": {"type": "text", "text": "clean"},
+            "metadata": None,
+        }
+
+        transport = _StaleBufferTransport(
+            [filler, cancel_terminal, result_after]
+        )
+        client = RuntimeUseClient(transport=transport)
+
+        async with client.session() as session:
+            async def abort_on_first(_msg):
+                session.abort()
+
+            with pytest.raises(CancelledException):
+                await session.query(
+                    prompt="one",
+                    options=make_query_options(on_assistant_message=abort_on_first),
+                )
+
+            # Second request must NOT see the stale cancel_terminal.
+            second = await session.query(
+                prompt="two", options=make_query_options()
+            )
+
+        assert second.data.text == "clean"

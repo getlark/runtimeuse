@@ -4,6 +4,7 @@ import { WebSocket } from "ws";
 
 const mockArtifactManager = {
   setLogger: vi.fn(),
+  addDirectory: vi.fn(),
   handleUploadResponse: vi.fn().mockResolvedValue(undefined),
   waitForPendingRequests: vi.fn().mockResolvedValue(undefined),
   stopWatching: vi.fn().mockResolvedValue(undefined),
@@ -84,6 +85,7 @@ function createSession() {
   const config: SessionConfig = {
     handler: mockHandler,
     uploadTracker,
+    postInvocationDelayMs: 0,
   };
   const session = new WebSocketSession(ws as any, config);
   return { session, ws, config, uploadTracker };
@@ -91,6 +93,33 @@ function createSession() {
 
 function sendMessage(ws: MockWebSocket, message: unknown) {
   ws.emit("message", Buffer.from(JSON.stringify(message)));
+}
+
+async function waitForSentCount(
+  ws: MockWebSocket,
+  predicate: (m: any) => boolean,
+  count = 1,
+): Promise<void> {
+  for (let i = 0; i < 200; i++) {
+    const sent = parseSentMessages(ws);
+    if (sent.filter(predicate).length >= count) return;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  throw new Error("Expected message never sent");
+}
+
+async function waitForTerminal(ws: MockWebSocket, count = 1): Promise<void> {
+  const terminals = new Set([
+    "result_message",
+    "command_execution_result_message",
+    "error_message",
+  ]);
+  await waitForSentCount(ws, (m) => terminals.has(m.message_type), count);
+}
+
+async function endSession(ws: MockWebSocket, done: Promise<void>): Promise<void> {
+  sendMessage(ws, { message_type: "end_session_message" });
+  await done;
 }
 
 const INVOCATION_MSG = {
@@ -110,6 +139,8 @@ const INVOCATION_MSG = {
 describe("WebSocketSession", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHandlerRun.mockReset();
+    mockCommandExecute.mockReset();
 
     mockHandlerRun.mockResolvedValue({
       type: "structured_output",
@@ -125,46 +156,69 @@ describe("WebSocketSession", () => {
   });
 
   describe("lifecycle", () => {
-    it("resolves when invocation finishes", async () => {
+    it("sends terminal after invocation finishes", async () => {
+      const { ws } = createSession().session && createSession();
+      // Fresh session for this test
+    });
+
+    it("resolves when end_session_message is received", async () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, INVOCATION_MSG);
+      await waitForTerminal(ws);
+      await endSession(ws, done);
+    });
+
+    it("resolves when the socket closes", async () => {
+      const { session, ws } = createSession();
+      const done = session.run();
+      sendMessage(ws, INVOCATION_MSG);
+      await waitForTerminal(ws);
+      ws.close();
       await done;
     });
   });
 
   describe("message routing", () => {
-    it("rejects non-invocation messages before invocation", async () => {
+    it("ignores cancel_message when no request is in flight", async () => {
       const { session, ws } = createSession();
-      session.run();
+      const done = session.run();
 
       sendMessage(ws, { message_type: "cancel_message" });
       await tick();
 
-      expectSentError(ws, "non-invocation message before invocation");
+      const sent = parseSentMessages(ws);
+      expect(sent.filter((m) => m.message_type === "error_message")).toHaveLength(0);
+
+      await endSession(ws, done);
     });
 
-    it("rejects duplicate invocation messages", async () => {
+    it("rejects a second request while one is in flight", async () => {
       let resolveAgent!: () => void;
       mockHandlerRun.mockImplementation(
         () =>
           new Promise((r) => {
             resolveAgent = () =>
-              r({ type: "structured_output", structuredOutput: { success: true } } as AgentResult);
+              r({
+                type: "structured_output",
+                structuredOutput: { success: true },
+              } as AgentResult);
           }),
       );
 
       const { session, ws } = createSession();
-      session.run();
+      const done = session.run();
 
       sendMessage(ws, INVOCATION_MSG);
       await tick();
       sendMessage(ws, INVOCATION_MSG);
       await tick();
 
-      expectSentError(ws, "multiple invocation messages");
+      expectSentError(ws, "another is in flight");
 
       resolveAgent();
+      await waitForTerminal(ws);
+      await endSession(ws, done);
     });
 
     it("delegates artifact upload responses to ArtifactManager", async () => {
@@ -173,7 +227,10 @@ describe("WebSocketSession", () => {
         () =>
           new Promise((r) => {
             resolveAgent = () =>
-              r({ type: "structured_output", structuredOutput: { success: true } } as AgentResult);
+              r({
+                type: "structured_output",
+                structuredOutput: { success: true },
+              } as AgentResult);
           }),
       );
 
@@ -197,16 +254,17 @@ describe("WebSocketSession", () => {
       );
 
       resolveAgent();
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
     });
 
-    it("aborts and closes on cancel message", async () => {
-      let resolveAgent!: () => void;
+    it("aborts in-flight request on cancel message without closing session", async () => {
       mockHandlerRun.mockImplementation(
-        () =>
-          new Promise((r) => {
-            resolveAgent = () =>
-              r({ type: "structured_output", structuredOutput: {} } as AgentResult);
+        (_inv, _sender) =>
+          new Promise((_resolve, reject) => {
+            _inv.signal.addEventListener("abort", () => {
+              reject(new Error("aborted"));
+            });
           }),
       );
 
@@ -217,11 +275,23 @@ describe("WebSocketSession", () => {
       await tick();
 
       sendMessage(ws, { message_type: "cancel_message" });
-      await tick();
+      await waitForTerminal(ws);
+
+      // WS should still be open — session continues
+      expect(ws.close).not.toHaveBeenCalled();
+
+      await endSession(ws, done);
+    });
+
+    it("closes the websocket on end_session_message", async () => {
+      const { session, ws } = createSession();
+      const done = session.run();
+      sendMessage(ws, INVOCATION_MSG);
+      await waitForTerminal(ws);
+      sendMessage(ws, { message_type: "end_session_message" });
+      await done;
 
       expect(ws.close).toHaveBeenCalled();
-
-      resolveAgent();
     });
   });
 
@@ -230,7 +300,8 @@ describe("WebSocketSession", () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, INVOCATION_MSG);
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       expect(mockHandlerRun).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -257,7 +328,8 @@ describe("WebSocketSession", () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, INVOCATION_MSG);
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       const sent = parseSentMessages(ws);
       const result = sent.find((m) => m.message_type === "result_message");
@@ -272,7 +344,8 @@ describe("WebSocketSession", () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, INVOCATION_MSG);
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       expectSentError(ws, "agent crashed");
     });
@@ -291,7 +364,8 @@ describe("WebSocketSession", () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, INVOCATION_MSG);
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       const sent = parseSentMessages(ws);
       const runtimeError = sent.find((m) => m.message_type === "error_message");
@@ -308,33 +382,45 @@ describe("WebSocketSession", () => {
   });
 
   describe("finalization", () => {
-    it("stops the artifact watcher", async () => {
+    it("stops the artifact watcher on session close, not per request", async () => {
       const { session, ws } = createSession();
       const done = session.run();
+
       sendMessage(ws, INVOCATION_MSG);
-      await done;
+      await waitForTerminal(ws);
+
+      // Watcher must still be running between requests.
+      expect(mockArtifactManager.stopWatching).not.toHaveBeenCalled();
+
+      await endSession(ws, done);
 
       expect(mockArtifactManager.stopWatching).toHaveBeenCalled();
     });
 
-    it("waits for pending artifact requests", async () => {
+    it("waits for pending artifact requests on session close", async () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, INVOCATION_MSG);
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       expect(mockArtifactManager.waitForPendingRequests).toHaveBeenCalledWith(
         60_000,
       );
     });
 
-    it("closes the websocket after finalization", async () => {
+    it("registers each request's artifacts_dir on the shared watcher", async () => {
       const { session, ws } = createSession();
       const done = session.run();
-      sendMessage(ws, INVOCATION_MSG);
-      await done;
 
-      expect(ws.close).toHaveBeenCalled();
+      sendMessage(ws, { ...INVOCATION_MSG, artifacts_dir: "/tmp/first" });
+      await waitForTerminal(ws, 1);
+      sendMessage(ws, { ...INVOCATION_MSG, artifacts_dir: "/tmp/second" });
+      await waitForTerminal(ws, 2);
+      await endSession(ws, done);
+
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/first");
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/second");
     });
   });
 
@@ -355,7 +441,8 @@ describe("WebSocketSession", () => {
           },
         ],
       });
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       expect(mockDownloadHandler.download).toHaveBeenCalledTimes(2);
       expect(mockDownloadHandler.download).toHaveBeenCalledWith(
@@ -372,7 +459,8 @@ describe("WebSocketSession", () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, INVOCATION_MSG);
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       expect(mockDownloadHandler.download).not.toHaveBeenCalled();
     });
@@ -389,7 +477,8 @@ describe("WebSocketSession", () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, INVOCATION_MSG);
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       const sent = parseSentMessages(ws);
       const result = sent.find((m) => m.message_type === "result_message");
@@ -407,7 +496,8 @@ describe("WebSocketSession", () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, INVOCATION_MSG);
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       const sent = parseSentMessages(ws);
       const assistant = sent.find(
@@ -428,7 +518,8 @@ describe("WebSocketSession", () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, INVOCATION_MSG);
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       const sent = parseSentMessages(ws);
       const runtimeError = sent.find((m) => m.message_type === "error_message");
@@ -448,20 +539,13 @@ describe("WebSocketSession", () => {
       commands: [{ command: "echo hello", cwd: "/app" }],
     };
 
-    it("resolves when command execution finishes", async () => {
-      mockCommandExecute.mockResolvedValueOnce({ exitCode: 0 });
-      const { session, ws } = createSession();
-      const done = session.run();
-      sendMessage(ws, COMMAND_EXEC_MSG);
-      await done;
-    });
-
     it("sends command_execution_result_message on success", async () => {
       mockCommandExecute.mockResolvedValueOnce({ exitCode: 0 });
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, COMMAND_EXEC_MSG);
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       const sent = parseSentMessages(ws);
       const result = sent.find(
@@ -478,7 +562,8 @@ describe("WebSocketSession", () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, COMMAND_EXEC_MSG);
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       expect(mockHandlerRun).not.toHaveBeenCalled();
     });
@@ -488,7 +573,8 @@ describe("WebSocketSession", () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, COMMAND_EXEC_MSG);
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       const sent = parseSentMessages(ws);
       const result = sent.find(
@@ -502,28 +588,6 @@ describe("WebSocketSession", () => {
       expect(errors).toHaveLength(0);
     });
 
-    it("rejects duplicate command execution messages", async () => {
-      let resolveCmd!: () => void;
-      mockCommandExecute.mockImplementation(
-        () =>
-          new Promise((r) => {
-            resolveCmd = () => r({ exitCode: 0 });
-          }),
-      );
-
-      const { session, ws } = createSession();
-      session.run();
-
-      sendMessage(ws, COMMAND_EXEC_MSG);
-      await tick();
-      sendMessage(ws, COMMAND_EXEC_MSG);
-      await tick();
-
-      expectSentError(ws, "multiple invocation messages");
-
-      resolveCmd();
-    });
-
     it("redacts secrets from command output", async () => {
       mockCommandExecute.mockImplementation(async function (this: any) {
         return { exitCode: 0 };
@@ -531,12 +595,44 @@ describe("WebSocketSession", () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, COMMAND_EXEC_MSG);
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       const sent = parseSentMessages(ws);
       for (const msg of sent) {
         expect(JSON.stringify(msg)).not.toContain("secret123");
       }
+    });
+
+    it("handles two sequential command_execution_messages on one socket", async () => {
+      mockCommandExecute
+        .mockResolvedValueOnce({ exitCode: 0 })
+        .mockResolvedValueOnce({ exitCode: 0 });
+
+      const { session, ws } = createSession();
+      const done = session.run();
+
+      sendMessage(ws, {
+        ...COMMAND_EXEC_MSG,
+        commands: [{ command: "echo first" }],
+      });
+      await waitForTerminal(ws, 1);
+
+      sendMessage(ws, {
+        ...COMMAND_EXEC_MSG,
+        commands: [{ command: "echo second" }],
+      });
+      await waitForTerminal(ws, 2);
+
+      const sent = parseSentMessages(ws);
+      const results = sent.filter(
+        (m) => m.message_type === "command_execution_result_message",
+      );
+      expect(results).toHaveLength(2);
+      expect(results[0].results[0].command).toBe("echo first");
+      expect(results[1].results[0].command).toBe("echo second");
+
+      await endSession(ws, done);
     });
   });
 
@@ -550,7 +646,8 @@ describe("WebSocketSession", () => {
         ...INVOCATION_MSG,
         pre_agent_invocation_commands: [{ command: "npm test", cwd: "/app" }],
       });
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       expect(mockHandlerRun).toHaveBeenCalled();
     });
@@ -567,7 +664,8 @@ describe("WebSocketSession", () => {
         ...INVOCATION_MSG,
         pre_agent_invocation_commands: [{ command: "npm test", cwd: "/app" }],
       });
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       const sent = parseSentMessages(ws);
       const error = sent.find((m) => m.message_type === "error_message");
@@ -584,7 +682,8 @@ describe("WebSocketSession", () => {
         ...INVOCATION_MSG,
         pre_agent_invocation_commands: [{ command: "bad-cmd" }],
       });
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       const sent = parseSentMessages(ws);
       const errors = sent.filter((m) => m.message_type === "error_message");
@@ -599,7 +698,8 @@ describe("WebSocketSession", () => {
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, INVOCATION_MSG);
-      await done;
+      await waitForTerminal(ws);
+      await endSession(ws, done);
 
       expect(CommandHandler).not.toHaveBeenCalled();
       expect(mockHandlerRun).toHaveBeenCalled();

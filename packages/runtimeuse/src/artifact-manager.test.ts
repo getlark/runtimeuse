@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockWatcher = {
   on: vi.fn().mockReturnThis(),
   close: vi.fn().mockResolvedValue(undefined),
+  add: vi.fn(),
 };
 
 vi.mock("chokidar", () => ({
@@ -35,16 +36,19 @@ import {
 import { UploadTracker } from "./upload-tracker.js";
 import { uploadFile } from "./storage.js";
 
-function createManager(overrides: Partial<ArtifactManagerConfig> = {}) {
+function createManager(
+  overrides: Partial<ArtifactManagerConfig> = {},
+  artifactsDir: string | null = "/tmp/artifacts",
+) {
   const send = vi.fn();
   const uploadTracker = new UploadTracker();
   const config: ArtifactManagerConfig = {
-    artifactsDir: "/tmp/artifacts",
     uploadTracker,
     send,
     ...overrides,
   };
   const manager = new ArtifactManager(config);
+  if (artifactsDir) manager.addDirectory(artifactsDir);
   return { manager, send, uploadTracker };
 }
 
@@ -65,12 +69,13 @@ describe("ArtifactManager", () => {
   });
 
   describe("constructor", () => {
-    it("creates a chokidar watcher on the artifacts directory", () => {
+    it("creates an empty chokidar watcher and registers dirs later", () => {
       createManager();
-      expect(chokidar.watch).toHaveBeenCalledWith("/tmp/artifacts", {
+      expect(chokidar.watch).toHaveBeenCalledWith([], {
         awaitWriteFinish: true,
         alwaysStat: true,
       });
+      expect(mockWatcher.add).toHaveBeenCalledWith("/tmp/artifacts");
     });
 
     it("registers add and change handlers", () => {
@@ -78,6 +83,23 @@ describe("ArtifactManager", () => {
       const events = mockWatcher.on.mock.calls.map((c: unknown[]) => c[0]);
       expect(events).toContain("add");
       expect(events).toContain("change");
+    });
+
+    it("supports multiple directories in one session", () => {
+      const { manager } = createManager({}, null);
+      manager.addDirectory("/tmp/run-one");
+      manager.addDirectory("/tmp/run-two");
+      expect(mockWatcher.add).toHaveBeenCalledWith("/tmp/run-one");
+      expect(mockWatcher.add).toHaveBeenCalledWith("/tmp/run-two");
+    });
+
+    it("ignores repeat addDirectory calls for the same path", () => {
+      const { manager } = createManager({}, null);
+      manager.addDirectory("/tmp/run-one");
+      manager.addDirectory("/tmp/run-one");
+      expect(
+        mockWatcher.add.mock.calls.filter((c) => c[0] === "/tmp/run-one"),
+      ).toHaveLength(1);
     });
   });
 

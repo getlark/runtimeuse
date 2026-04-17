@@ -104,7 +104,7 @@ describe("InvocationRunner", () => {
   it("calls handler with parsed output format", async () => {
     const { runner, message, abortController, logger, send } = createRunner();
 
-    await runner.run(message);
+    const result = await runner.run(message);
 
     expect(mockHandlerRun).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -125,7 +125,7 @@ describe("InvocationRunner", () => {
       }),
     );
 
-    expect(send).toHaveBeenCalledWith({
+    expect(result).toEqual({
       message_type: "result_message",
       metadata: { duration_ms: 12 },
       data: { type: "structured_output", structured_output: { ok: true } },
@@ -167,6 +167,23 @@ describe("InvocationRunner", () => {
     ]);
   });
 
+  it("throws when a post-agent command exits non-zero", async () => {
+    mockHandlerRun.mockResolvedValueOnce({
+      type: "text",
+      text: "agent succeeded",
+    } as AgentResult);
+    mockExecute.mockResolvedValueOnce({ exitCode: 7 });
+
+    const { runner, message } = createRunner({
+      output_format_json_schema_str: undefined,
+      post_agent_invocation_commands: [{ command: "cleanup", cwd: "/app" }],
+    });
+
+    await expect(runner.run(message)).rejects.toThrow(
+      "post-agent command failed with exit code: 7",
+    );
+  });
+
   it("forwards command stdout and stderr through assistant messages", async () => {
     mockExecute.mockImplementation(async (options) => {
       options.onStdout?.("stdout data");
@@ -190,7 +207,7 @@ describe("InvocationRunner", () => {
     });
   });
 
-  it("sends error message and throws when command exits non-zero", async () => {
+  it("throws when pre-agent command exits non-zero; caller decides wire error", async () => {
     mockExecute.mockResolvedValueOnce({ exitCode: 2 });
     const { runner, message, send, logger } = createRunner({
       pre_agent_invocation_commands: [{ command: "false", cwd: "/app" }],
@@ -203,11 +220,11 @@ describe("InvocationRunner", () => {
     expect(logger.error).toHaveBeenCalledWith(
       "pre-agent command failed with exit code: 2",
     );
-    expect(send).toHaveBeenCalledWith({
-      message_type: "error_message",
-      error: "pre-agent command failed with exit code: 2",
-      metadata: {},
-    });
+    // runner no longer emits error_message itself; the caller (session) does
+    // so that exactly one terminal is sent per request.
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message_type: "error_message" }),
+    );
     expect(mockHandlerRun).not.toHaveBeenCalled();
   });
 
@@ -237,33 +254,33 @@ describe("InvocationRunner", () => {
       type: "structured_output",
       structuredOutput: { ok: true },
     } as AgentResult);
-    const { runner, message, send } = createRunner();
+    const { runner, message } = createRunner();
 
-    await runner.run(message);
+    const result = await runner.run(message);
 
-    expect(send).toHaveBeenCalledWith({
+    expect(result).toEqual({
       message_type: "result_message",
       metadata: {},
       data: { type: "structured_output", structured_output: { ok: true } },
     });
   });
 
-  it("sends text result when handler returns text", async () => {
+  it("returns text result when handler returns text", async () => {
     mockHandlerRun.mockResolvedValueOnce({
       type: "text",
       text: "Hello, world!",
       metadata: { model: "test" },
     } as AgentResult);
-    const { runner, send } = createRunner({
+    const { runner } = createRunner({
       output_format_json_schema_str: undefined,
     });
 
-    await runner.run({
+    const result = await runner.run({
       ...BASE_INVOCATION_MESSAGE,
       output_format_json_schema_str: undefined,
     });
 
-    expect(send).toHaveBeenCalledWith({
+    expect(result).toEqual({
       message_type: "result_message",
       metadata: { model: "test" },
       data: { type: "text", text: "Hello, world!" },
@@ -405,12 +422,12 @@ describe("InvocationRunner.runCommandsOnly", () => {
     mockExecute.mockResolvedValue({ exitCode: 0 });
   });
 
-  it("sends command_execution_result_message on success", async () => {
-    const { runner, message, send } = createCommandRunner();
+  it("returns command_execution_result_message on success", async () => {
+    const { runner, message } = createCommandRunner();
 
-    await runner.runCommandsOnly(message);
+    const result = await runner.runCommandsOnly(message);
 
-    expect(send).toHaveBeenCalledWith({
+    expect(result).toEqual({
       message_type: "command_execution_result_message",
       results: [{ command: "echo hello", exit_code: 0 }],
     });
@@ -418,16 +435,16 @@ describe("InvocationRunner.runCommandsOnly", () => {
   });
 
   it("collects results for multiple commands", async () => {
-    const { runner, message, send } = createCommandRunner({
+    const { runner, message } = createCommandRunner({
       commands: [
         { command: "echo 1", cwd: "/app" },
         { command: "echo 2", cwd: "/app" },
       ],
     });
 
-    await runner.runCommandsOnly(message);
+    const result = await runner.runCommandsOnly(message);
 
-    expect(send).toHaveBeenCalledWith({
+    expect(result).toEqual({
       message_type: "command_execution_result_message",
       results: [
         { command: "echo 1", exit_code: 0 },
@@ -461,9 +478,9 @@ describe("InvocationRunner.runCommandsOnly", () => {
     mockExecute.mockResolvedValueOnce({ exitCode: 2 });
     const { runner, message, send } = createCommandRunner();
 
-    await runner.runCommandsOnly(message);
+    const result = await runner.runCommandsOnly(message);
 
-    expect(send).toHaveBeenCalledWith({
+    expect(result).toEqual({
       message_type: "command_execution_result_message",
       results: [{ command: "echo hello", exit_code: 2 }],
     });
@@ -476,16 +493,16 @@ describe("InvocationRunner.runCommandsOnly", () => {
     mockExecute
       .mockResolvedValueOnce({ exitCode: 1 })
       .mockResolvedValueOnce({ exitCode: 0 });
-    const { runner, message, send } = createCommandRunner({
+    const { runner, message } = createCommandRunner({
       commands: [
         { command: "failing", cwd: "/app" },
         { command: "skipped", cwd: "/app" },
       ],
     });
 
-    await runner.runCommandsOnly(message);
+    const result = await runner.runCommandsOnly(message);
 
-    expect(send).toHaveBeenCalledWith({
+    expect(result).toEqual({
       message_type: "command_execution_result_message",
       results: [{ command: "failing", exit_code: 1 }],
     });

@@ -47,6 +47,10 @@ interface CancelMessage {
   message_type: "cancel_message";
 }
 
+interface EndSessionMessage {
+  message_type: "end_session_message";
+}
+
 interface ResultMessage {
   message_type: "result_message";
   metadata?: Record<string, unknown>;
@@ -92,7 +96,8 @@ type IncomingMessage =
   | InvocationMessage
   | CommandExecutionMessage
   | ArtifactUploadResponseMessage
-  | CancelMessage;
+  | CancelMessage
+  | EndSessionMessage;
 
 export type {
   IncomingMessage,
@@ -102,6 +107,7 @@ export type {
   CommandExecutionResultMessage,
   CommandExecutionResultItem,
   CancelMessage,
+  EndSessionMessage,
   ResultMessage,
   AssistantMessage,
   ArtifactUploadRequestMessage,

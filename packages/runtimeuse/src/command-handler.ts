@@ -53,7 +53,9 @@ class CommandHandler {
         },
         (error, stdout, stderr) => {
           if (error) {
-            return resolve({ exitCode: error.code as number, error });
+            const code =
+              typeof error.code === "number" ? error.code : -1;
+            return resolve({ exitCode: code, error });
           }
         },
       );
