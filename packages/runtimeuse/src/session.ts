@@ -36,6 +36,7 @@ export class WebSocketSession {
   private requestInFlight = false;
   private secrets: string[] = [];
   private logger: Logger;
+  private drainPromise: Promise<void> | null = null;
 
   constructor(ws: WebSocket, config: SessionConfig) {
     this.ws = ws;
@@ -68,22 +69,7 @@ export class WebSocketSession {
         }
         this.logger.log("WebSocket connection closed");
         this.currentAbortController?.abort();
-
-        // Give chokidar time to observe files the agent wrote right before
-        // the session ended. Without this, late `add` events would not fire
-        // before we stop the watcher, and those artifacts would be lost.
-        const delayMs = this.config.postInvocationDelayMs ?? 3_000;
-        if (this.artifactManager && delayMs > 0) {
-          this.logger.log(`Waiting ${delayMs}ms for artifact watcher to drain...`);
-          await sleep(delayMs);
-        }
-        await this.artifactManager?.stopWatching();
-        await this.artifactManager?.waitForPendingRequests(
-          this.config.artifactWaitMs ?? 60_000,
-        );
-        await this.config.uploadTracker.waitForAll(
-          this.config.uploadTimeoutMs ?? 30_000,
-        );
+        await this.drain();
         resolve();
       });
 
@@ -97,6 +83,9 @@ export class WebSocketSession {
     switch (message.message_type) {
       case "end_session_message":
         this.logger.log("Received end_session_message. Closing session.");
+        // Drain the artifact watcher *before* closing so any late chokidar
+        // events still have an open socket to send upload requests through.
+        await this.drain();
         this.ws.close();
         return;
 
@@ -209,6 +198,26 @@ export class WebSocketSession {
       this.currentAbortController = null;
       this.requestInFlight = false;
     }
+  }
+
+  private drain(): Promise<void> {
+    if (!this.drainPromise) {
+      this.drainPromise = (async () => {
+        const delayMs = this.config.postInvocationDelayMs ?? 3_000;
+        if (this.artifactManager && delayMs > 0) {
+          this.logger.log(`Waiting ${delayMs}ms for artifact watcher to drain...`);
+          await sleep(delayMs);
+        }
+        await this.artifactManager?.stopWatching();
+        await this.artifactManager?.waitForPendingRequests(
+          this.config.artifactWaitMs ?? 60_000,
+        );
+        await this.config.uploadTracker.waitForAll(
+          this.config.uploadTimeoutMs ?? 30_000,
+        );
+      })();
+    }
+    return this.drainPromise;
   }
 
   private ensureArtifactManager(): void {
