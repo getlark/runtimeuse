@@ -1,5 +1,8 @@
 import asyncio
-from typing import Any, AsyncGenerator, AsyncContextManager, Protocol
+from typing import Any, AsyncGenerator, AsyncContextManager, Awaitable, Callable, Protocol
+
+
+EndSessionMessageHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
 
 
 class Transport(Protocol):
@@ -29,6 +32,12 @@ class ConnectedTransport(Protocol):
     def request(
         self, send_queue: asyncio.Queue[dict]
     ) -> AsyncGenerator[dict[str, Any], None]: ...
+
+    async def end_session(
+        self,
+        on_message: EndSessionMessageHandler | None = None,
+        timeout_s: float = 60.0,
+    ) -> None: ...
 
     async def close(self) -> None: ...
 

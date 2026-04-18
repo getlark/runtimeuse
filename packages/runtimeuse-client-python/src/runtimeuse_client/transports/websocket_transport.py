@@ -6,6 +6,8 @@ from typing import AsyncGenerator, AsyncIterator, Any
 
 import websockets
 
+from .transport import EndSessionMessageHandler
+
 _logger = logging.getLogger(__name__)
 
 
@@ -41,15 +43,59 @@ class ConnectedWebSocketTransport:
             except asyncio.CancelledError:
                 pass
 
-    async def close(self, send_end_message: bool = True) -> None:
-        """Close the connection, optionally sending end_session_message first."""
-        if send_end_message:
-            try:
-                await self._ws.send(
-                    json.dumps({"message_type": "end_session_message"})
-                )
-            except websockets.exceptions.ConnectionClosed:
-                pass
+    async def end_session(
+        self,
+        on_message: EndSessionMessageHandler | None = None,
+        timeout_s: float = 60.0,
+    ) -> None:
+        """Send ``end_session_message`` and pump the receive loop until the
+        server's ``end_session_confirm_message`` arrives (or timeout).
+
+        The runtime drains its artifact watcher before confirming, so late
+        ``artifact_upload_request_message``s may arrive in this window. For
+        each incoming message, ``on_message`` is awaited and may return a
+        dict response to send back over the socket.
+        """
+        try:
+            await self._ws.send(
+                json.dumps({"message_type": "end_session_message"})
+            )
+        except websockets.exceptions.ConnectionClosed:
+            return
+
+        try:
+            async with asyncio.timeout(timeout_s):
+                async for raw in self._ws:
+                    try:
+                        msg = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    if msg.get("message_type") == "end_session_confirm_message":
+                        return
+                    if on_message is None:
+                        continue
+                    try:
+                        response = await on_message(msg)
+                    except Exception:
+                        _logger.exception(
+                            "Error handling message during end_session drain"
+                        )
+                        continue
+                    if response is None:
+                        continue
+                    try:
+                        await self._ws.send(json.dumps(response))
+                    except websockets.exceptions.ConnectionClosed:
+                        return
+        except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
+            return
+
+    async def close(self) -> None:
+        """Close the underlying socket without sending end_session_message.
+
+        Callers that need a graceful session end should call
+        :meth:`end_session` first.
+        """
         await self._ws.close()
 
     async def _queue_sender(self, send_queue: asyncio.Queue[dict]) -> None:
@@ -89,7 +135,10 @@ class WebSocketTransport:
     async def connect(self) -> AsyncIterator[ConnectedWebSocketTransport]:
         """Open a persistent WebSocket connection for use with a session.
 
-        Sends ``end_session_message`` and closes the socket on exit.
+        The connection is closed on exit. Callers that want a graceful session
+        end (draining late artifacts) should call
+        :meth:`ConnectedWebSocketTransport.end_session` before exiting the
+        context.
         """
         _logger.info("Connecting persistent WebSocket to %s", self.ws_url)
         async with websockets.connect(self.ws_url, open_timeout=60) as ws:
@@ -97,5 +146,4 @@ class WebSocketTransport:
             try:
                 yield connected
             finally:
-                await connected.close(send_end_message=True)
                 _logger.info("Persistent agent runtime connection closed")

@@ -106,6 +106,10 @@ class EndSessionMessage(BaseModel):
     message_type: Literal["end_session_message"]
 
 
+class EndSessionConfirmMessage(BaseModel):
+    message_type: Literal["end_session_confirm_message"]
+
+
 class CommandExecutionMessage(BaseModel):
     message_type: Literal["command_execution_message"]
     source_id: str | None = None

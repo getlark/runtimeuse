@@ -82,10 +82,14 @@ export class WebSocketSession {
   private async handleMessage(message: IncomingMessage): Promise<void> {
     switch (message.message_type) {
       case "end_session_message":
-        this.logger.log("Received end_session_message. Closing session.");
-        // Drain the artifact watcher *before* closing so any late chokidar
-        // events still have an open socket to send upload requests through.
+        this.logger.log("Received end_session_message. Draining before confirm.");
+        // Drain artifacts *before* acknowledging so late chokidar events
+        // still have an open socket to send upload requests through. The
+        // client is expected to keep the socket open — processing any late
+        // artifact_upload_request_messages — until it receives our
+        // end_session_confirm_message.
         await this.drain();
+        this.send({ message_type: "end_session_confirm_message" });
         this.ws.close();
         return;
 
