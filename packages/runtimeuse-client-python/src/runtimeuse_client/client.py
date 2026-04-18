@@ -20,6 +20,7 @@ from .types import (
     AssistantMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResponseMessageInterface,
+    OnArtifactUploadRequestCallback,
     QueryOptions,
     ExecuteCommandsOptions,
 )
@@ -183,6 +184,11 @@ class RuntimeUseSession:
         self._abort_event = asyncio.Event()
         self._send_queue: asyncio.Queue[dict] | None = None
         self._lock = asyncio.Lock()
+        # Track the most recent artifact upload callback so we can keep
+        # handling late artifact requests during session close (after the
+        # last query's request loop has exited).
+        self._last_artifact_cb: OnArtifactUploadRequestCallback | None = None
+        self._end_session_timeout_s: float = 60.0
 
     def abort(self) -> None:
         """Signal the in-flight request to cancel.
@@ -202,6 +208,8 @@ class RuntimeUseSession:
         async with self._lock:
             logger = options.logger or _default_logger
             self._abort_event = asyncio.Event()
+            if options.on_artifact_upload_request is not None:
+                self._last_artifact_cb = options.on_artifact_upload_request
 
             invocation = _build_invocation(prompt, options)
             send_queue: asyncio.Queue[dict] = asyncio.Queue()
@@ -238,6 +246,8 @@ class RuntimeUseSession:
         async with self._lock:
             logger = options.logger or _default_logger
             self._abort_event = asyncio.Event()
+            if options.on_artifact_upload_request is not None:
+                self._last_artifact_cb = options.on_artifact_upload_request
 
             message = _build_command_execution(commands, options)
             send_queue: asyncio.Queue[dict] = asyncio.Queue()
@@ -265,6 +275,47 @@ class RuntimeUseSession:
                 self._send_queue = None
 
             return CommandExecutionResult(results=wire.results)
+
+    async def _end_session(self) -> None:
+        """Send end_session_message and drain late artifact uploads until the
+        runtime confirms. Called by the session context manager on exit.
+        """
+        end_session = getattr(self._connected, "end_session", None)
+        if end_session is None:
+            # Older/alternate transports: nothing to drain.
+            return
+
+        async def on_message(msg: dict) -> dict | None:
+            if msg.get("message_type") != "artifact_upload_request_message":
+                return None
+            if self._last_artifact_cb is None:
+                return None
+            try:
+                req = ArtifactUploadRequestMessageInterface.model_validate(msg)
+            except pydantic.ValidationError:
+                _default_logger.error(
+                    f"Malformed artifact upload request during end-of-session drain: {msg}"
+                )
+                return None
+            try:
+                result = await self._last_artifact_cb(req)
+            except Exception:
+                _default_logger.exception(
+                    "Artifact upload callback failed during end-of-session drain"
+                )
+                return None
+            response = ArtifactUploadResponseMessageInterface(
+                message_type="artifact_upload_response_message",
+                filename=req.filename,
+                filepath=req.filepath,
+                presigned_url=result.presigned_url,
+                content_type=result.content_type,
+            )
+            return response.model_dump(mode="json")
+
+        await end_session(
+            on_message=on_message, timeout_s=self._end_session_timeout_s
+        )
 
 
 class RuntimeUseClient:
@@ -337,7 +388,11 @@ class RuntimeUseClient:
                 "Use a transport that implements PersistentTransport (e.g. WebSocketTransport)."
             )
         async with connect() as connected:
-            yield RuntimeUseSession(connected)
+            runtime_session = RuntimeUseSession(connected)
+            try:
+                yield runtime_session
+            finally:
+                await runtime_session._end_session()
 
     async def query(
         self,

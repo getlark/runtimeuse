@@ -86,12 +86,17 @@ interface ErrorMessage {
   metadata: Record<string, unknown>;
 }
 
+interface EndSessionConfirmMessage {
+  message_type: "end_session_confirm_message";
+}
+
 type OutgoingMessage =
   | ResultMessage
   | AssistantMessage
   | ArtifactUploadRequestMessage
   | ErrorMessage
-  | CommandExecutionResultMessage;
+  | CommandExecutionResultMessage
+  | EndSessionConfirmMessage;
 
 type IncomingMessage =
   | InvocationMessage
@@ -114,6 +119,7 @@ export type {
   ArtifactUploadRequestMessage,
   ArtifactUploadResponseMessage,
   ErrorMessage,
+  EndSessionConfirmMessage,
   Command,
   RuntimeEnvironmentDownloadable,
 };
