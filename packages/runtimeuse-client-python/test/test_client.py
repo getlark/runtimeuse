@@ -982,6 +982,9 @@ class _StaleBufferTransport:
         finally:
             self._drain_send(send_queue)
 
+    async def end_session(self, on_message=None, timeout_s: float = 60.0) -> None:
+        return None
+
     async def close(self) -> None:
         self.closed = True
 
