@@ -616,6 +616,8 @@ class TestExecuteCommands:
         assert len(result.results) == 1
         assert result.results[0].command == "echo hello"
         assert result.results[0].exit_code == 0
+        assert result.results[0].stdout is not None
+        assert "hello" in result.results[0].stdout
 
     async def test_multiple_commands_success(
         self, client: RuntimeUseClient, make_execute_commands_options
@@ -631,8 +633,12 @@ class TestExecuteCommands:
         assert len(result.results) == 2
         assert result.results[0].command == "echo first"
         assert result.results[0].exit_code == 0
+        assert result.results[0].stdout is not None
+        assert "first" in result.results[0].stdout
         assert result.results[1].command == "echo second"
         assert result.results[1].exit_code == 0
+        assert result.results[1].stdout is not None
+        assert "second" in result.results[1].stdout
 
     async def test_command_output_streamed_via_callback(
         self, client: RuntimeUseClient, make_execute_commands_options
@@ -664,6 +670,7 @@ class TestExecuteCommands:
         assert len(result.results) == 1
         assert result.results[0].command == "exit 1"
         assert result.results[0].exit_code == 1
+        assert not result.results[0].stdout
 
     async def test_failed_command_skips_remaining(
         self, client: RuntimeUseClient, make_execute_commands_options
@@ -680,8 +687,11 @@ class TestExecuteCommands:
         assert len(result.results) == 2
         assert result.results[0].command == "echo first"
         assert result.results[0].exit_code == 0
+        assert result.results[0].stdout is not None
+        assert "first" in result.results[0].stdout
         assert result.results[1].command == "exit 2"
         assert result.results[1].exit_code == 2
+        assert not result.results[1].stdout
 
     async def test_agent_handler_not_invoked(
         self, client: RuntimeUseClient, make_execute_commands_options
@@ -702,7 +712,7 @@ class TestExecuteCommands:
         async def on_msg(msg: AssistantMessageInterface):
             received.append(msg)
 
-        await client.execute_commands(
+        result = await client.execute_commands(
             commands=[CommandInterface(command="pwd", cwd="/tmp")],
             options=make_execute_commands_options(
                 on_assistant_message=on_msg, timeout=10
@@ -711,6 +721,8 @@ class TestExecuteCommands:
 
         all_text = [block for msg in received for block in msg.text_blocks]
         assert any("/tmp" in t for t in all_text)
+        assert result.results[0].stdout is not None
+        assert "/tmp" in result.results[0].stdout
 
     async def test_secrets_redacted_from_output(
         self, client: RuntimeUseClient, make_execute_commands_options

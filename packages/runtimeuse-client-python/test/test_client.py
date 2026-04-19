@@ -515,7 +515,7 @@ class TestConstructor:
 
 COMMAND_RESULT_MSG = {
     "message_type": "command_execution_result_message",
-    "results": [{"command": "echo hello", "exit_code": 0}],
+    "results": [{"command": "echo hello", "exit_code": 0, "stdout": "hello\n"}],
 }
 
 
@@ -535,6 +535,7 @@ class TestExecuteCommands:
         assert len(result.results) == 1
         assert result.results[0].command == "echo hello"
         assert result.results[0].exit_code == 0
+        assert result.results[0].stdout == "hello\n"
 
     @pytest.mark.asyncio
     async def test_sends_command_execution_message(
@@ -614,6 +615,7 @@ class TestExecuteCommands:
         assert isinstance(result, CommandExecutionResult)
         assert len(result.results) == 1
         assert result.results[0].exit_code == 1
+        assert result.results[0].stdout is None
 
     @pytest.mark.asyncio
     async def test_failed_command_skips_remaining(
@@ -622,7 +624,7 @@ class TestExecuteCommands:
         result_msg = {
             "message_type": "command_execution_result_message",
             "results": [
-                {"command": "echo first", "exit_code": 0},
+                {"command": "echo first", "exit_code": 0, "stdout": "first\n"},
                 {"command": "exit 1", "exit_code": 1},
             ],
         }
@@ -639,7 +641,9 @@ class TestExecuteCommands:
 
         assert len(result.results) == 2
         assert result.results[0].exit_code == 0
+        assert result.results[0].stdout == "first\n"
         assert result.results[1].exit_code == 1
+        assert result.results[1].stdout is None
 
     @pytest.mark.asyncio
     async def test_no_result_raises(
@@ -730,7 +734,7 @@ class TestExecuteCommands:
     ):
         result_msg = {
             "message_type": "command_execution_result_message",
-            "results": [{"command": "echo hello", "exit_code": 0}],
+            "results": [{"command": "echo hello", "exit_code": 0, "stdout": "hello\n"}],
         }
         transport, client = fake_transport([result_msg])
 
@@ -843,7 +847,7 @@ class TestPersistentSession:
                 [
                     {
                         "message_type": "command_execution_result_message",
-                        "results": [{"command": "echo x", "exit_code": 0}],
+                        "results": [{"command": "echo x", "exit_code": 0, "stdout": "x\n"}],
                     }
                 ],
             ]
@@ -860,6 +864,7 @@ class TestPersistentSession:
 
         assert query_result.data.text == "persistent hello"
         assert cmd_result.results[0].command == "echo x"
+        assert cmd_result.results[0].stdout == "x\n"
 
     @pytest.mark.asyncio
     async def test_cancel_mid_session_then_another_call(

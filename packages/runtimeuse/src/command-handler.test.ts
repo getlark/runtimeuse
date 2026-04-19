@@ -207,7 +207,7 @@ describe("CommandHandler", () => {
       closeHandler(0);
 
       const result = await promise;
-      expect(result).toEqual({ exitCode: 0 });
+      expect(result).toEqual({ exitCode: 0, stdout: "output" });
     });
 
     it("resolves with exitCode 1 on close with code 1", async () => {
@@ -222,7 +222,7 @@ describe("CommandHandler", () => {
       closeHandler(1);
 
       const result = await promise;
-      expect(result).toEqual({ exitCode: 1 });
+      expect(result).toEqual({ exitCode: 1, stdout: undefined });
     });
 
     it("resolves with exitCode 1 and error when callback reports code 1", async () => {
@@ -250,7 +250,7 @@ describe("CommandHandler", () => {
       closeHandler(139);
 
       const result = await promise;
-      expect(result).toEqual({ exitCode: 139 });
+      expect(result).toEqual({ exitCode: 139, stdout: undefined });
     });
 
     it("resolves when callback reports a non-1 error code", async () => {
@@ -470,6 +470,60 @@ describe("CommandHandler", () => {
 
       await promise;
       expect(onStdout).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("stdout capture", () => {
+    it("includes stdout in the result on success", async () => {
+      const handler = createHandler({ command: "echo hello" });
+
+      const promise = handler.execute();
+
+      execCallback(null, "hello\n", "");
+      const closeHandler = execChild.on.mock.calls.find(
+        (c: unknown[]) => c[0] === "close",
+      )[1];
+      closeHandler(0);
+
+      const result = await promise;
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe("hello\n");
+    });
+
+    it("returns undefined stdout when command produces no output", async () => {
+      const handler = createHandler({ command: "true" });
+
+      const promise = handler.execute();
+
+      execCallback(null, "", "");
+      const closeHandler = execChild.on.mock.calls.find(
+        (c: unknown[]) => c[0] === "close",
+      )[1];
+      closeHandler(0);
+
+      const result = await promise;
+      expect(result.stdout).toBeUndefined();
+    });
+
+    it("redacts secrets from captured stdout", async () => {
+      const handler = createHandler(
+        { command: "echo" },
+        new AbortController(),
+        undefined,
+        undefined,
+        ["my-secret"],
+      );
+
+      const promise = handler.execute();
+
+      execCallback(null, "token=my-secret here", "");
+      const closeHandler = execChild.on.mock.calls.find(
+        (c: unknown[]) => c[0] === "close",
+      )[1];
+      closeHandler(0);
+
+      const result = await promise;
+      expect(result.stdout).toBe("token=[REDACTED] here");
     });
   });
 });

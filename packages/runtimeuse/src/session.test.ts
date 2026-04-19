@@ -540,7 +540,7 @@ describe("WebSocketSession", () => {
     };
 
     it("sends command_execution_result_message on success", async () => {
-      mockCommandExecute.mockResolvedValueOnce({ exitCode: 0 });
+      mockCommandExecute.mockResolvedValueOnce({ exitCode: 0, stdout: "hello\n" });
       const { session, ws } = createSession();
       const done = session.run();
       sendMessage(ws, COMMAND_EXEC_MSG);
@@ -553,7 +553,7 @@ describe("WebSocketSession", () => {
       );
       expect(result).toBeDefined();
       expect(result!.results).toEqual([
-        { command: "echo hello", exit_code: 0 },
+        { command: "echo hello", exit_code: 0, stdout: "hello\n" },
       ]);
     });
 
@@ -581,9 +581,8 @@ describe("WebSocketSession", () => {
         (m) => m.message_type === "command_execution_result_message",
       );
       expect(result).toBeDefined();
-      expect(result!.results).toEqual([
-        { command: "echo hello", exit_code: 1 },
-      ]);
+      expect(result!.results[0].command).toBe("echo hello");
+      expect(result!.results[0].exit_code).toBe(1);
       const errors = sent.filter((m) => m.message_type === "error_message");
       expect(errors).toHaveLength(0);
     });
@@ -606,8 +605,8 @@ describe("WebSocketSession", () => {
 
     it("handles two sequential command_execution_messages on one socket", async () => {
       mockCommandExecute
-        .mockResolvedValueOnce({ exitCode: 0 })
-        .mockResolvedValueOnce({ exitCode: 0 });
+        .mockResolvedValueOnce({ exitCode: 0, stdout: "first\n" })
+        .mockResolvedValueOnce({ exitCode: 0, stdout: "second\n" });
 
       const { session, ws } = createSession();
       const done = session.run();
@@ -630,7 +629,9 @@ describe("WebSocketSession", () => {
       );
       expect(results).toHaveLength(2);
       expect(results[0].results[0].command).toBe("echo first");
+      expect(results[0].results[0].stdout).toBe("first\n");
       expect(results[1].results[0].command).toBe("echo second");
+      expect(results[1].results[0].stdout).toBe("second\n");
 
       await endSession(ws, done);
     });
