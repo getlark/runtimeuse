@@ -60,7 +60,10 @@ class TestE2BSandbox:
             assert isinstance(result, CommandExecutionResult)
             assert len(result.results) == 2
             assert result.results[0].exit_code == 0
+            assert result.results[0].stdout is not None
+            assert "hello-from-e2b" in result.results[0].stdout
             assert result.results[1].exit_code == 0
+            assert result.results[1].stdout is not None
 
             all_text = [block for msg in received for block in msg.text_blocks]
             assert any("hello-from-e2b" in t for t in all_text)
@@ -81,6 +84,7 @@ class TestE2BSandbox:
             assert isinstance(result, CommandExecutionResult)
             assert len(result.results) == 1
             assert result.results[0].exit_code == 1
+            assert not result.results[0].stdout
         finally:
             sandbox.kill()
 
@@ -100,6 +104,9 @@ class TestE2BSandbox:
             assert isinstance(result, CommandExecutionResult)
             assert len(result.results) == 2
             assert result.results[0].exit_code == 0
+            assert result.results[0].stdout is not None
+            assert "first" in result.results[0].stdout
             assert result.results[1].exit_code == 1
+            assert not result.results[1].stdout
         finally:
             sandbox.kill()

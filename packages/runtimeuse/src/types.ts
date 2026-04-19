@@ -36,6 +36,7 @@ interface CommandExecutionMessage {
 interface CommandExecutionResultItem {
   command: string;
   exit_code: number;
+  stdout?: string;
 }
 
 interface CommandExecutionResultMessage {

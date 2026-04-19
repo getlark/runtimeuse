@@ -18,7 +18,7 @@ const mockExecute =
       command: { command: string; cwd?: string };
       onStdout?: (stdout: string) => void;
       onStderr?: (stderr: string) => void;
-    }) => Promise<{ exitCode: number }>
+    }) => Promise<{ exitCode: number; stdout?: string }>
   >();
 
 vi.mock("./download-handler.js", () => ({
@@ -423,18 +423,22 @@ describe("InvocationRunner.runCommandsOnly", () => {
   });
 
   it("returns command_execution_result_message on success", async () => {
+    mockExecute.mockResolvedValue({ exitCode: 0, stdout: "hello\n" });
     const { runner, message } = createCommandRunner();
 
     const result = await runner.runCommandsOnly(message);
 
     expect(result).toEqual({
       message_type: "command_execution_result_message",
-      results: [{ command: "echo hello", exit_code: 0 }],
+      results: [{ command: "echo hello", exit_code: 0, stdout: "hello\n" }],
     });
     expect(mockHandlerRun).not.toHaveBeenCalled();
   });
 
   it("collects results for multiple commands", async () => {
+    mockExecute
+      .mockResolvedValueOnce({ exitCode: 0, stdout: "1\n" })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: "2\n" });
     const { runner, message } = createCommandRunner({
       commands: [
         { command: "echo 1", cwd: "/app" },
@@ -447,8 +451,8 @@ describe("InvocationRunner.runCommandsOnly", () => {
     expect(result).toEqual({
       message_type: "command_execution_result_message",
       results: [
-        { command: "echo 1", exit_code: 0 },
-        { command: "echo 2", exit_code: 0 },
+        { command: "echo 1", exit_code: 0, stdout: "1\n" },
+        { command: "echo 2", exit_code: 0, stdout: "2\n" },
       ],
     });
   });
@@ -482,7 +486,7 @@ describe("InvocationRunner.runCommandsOnly", () => {
 
     expect(result).toEqual({
       message_type: "command_execution_result_message",
-      results: [{ command: "echo hello", exit_code: 2 }],
+      results: [{ command: "echo hello", exit_code: 2, stdout: undefined }],
     });
     expect(send).not.toHaveBeenCalledWith(
       expect.objectContaining({ message_type: "error_message" }),
@@ -504,7 +508,7 @@ describe("InvocationRunner.runCommandsOnly", () => {
 
     expect(result).toEqual({
       message_type: "command_execution_result_message",
-      results: [{ command: "failing", exit_code: 1 }],
+      results: [{ command: "failing", exit_code: 1, stdout: undefined }],
     });
   });
 

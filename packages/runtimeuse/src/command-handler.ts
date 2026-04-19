@@ -7,6 +7,7 @@ import { redactSecrets } from "./utils.js";
 export interface CommandResult {
   exitCode: number;
   error?: ExecFileException;
+  stdout?: string;
 }
 
 export interface CommandHandlerOptions {
@@ -44,6 +45,7 @@ class CommandHandler {
       }
     }
     return new Promise((resolve, reject) => {
+      let capturedStdout = "";
       const result = exec(
         this.command.command,
         {
@@ -52,6 +54,7 @@ class CommandHandler {
           signal: this.abortController.signal,
         },
         (error, stdout, stderr) => {
+          capturedStdout = stdout;
           if (error) {
             const code =
               typeof error.code === "number" ? error.code : -1;
@@ -81,7 +84,10 @@ class CommandHandler {
 
       result.on("close", (code) => {
         this.logger.log("Command closed with code:", code);
-        return resolve({ exitCode: code ?? 0 });
+        const stdout = capturedStdout
+          ? this.redactSecrets(capturedStdout)
+          : undefined;
+        return resolve({ exitCode: code ?? 0, stdout });
       });
     });
   }

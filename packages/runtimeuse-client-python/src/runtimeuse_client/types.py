@@ -120,6 +120,7 @@ class CommandExecutionMessage(BaseModel):
 class CommandResultItem(BaseModel):
     command: str
     exit_code: int
+    stdout: str | None = None
 
 
 class CommandExecutionResult(BaseModel):

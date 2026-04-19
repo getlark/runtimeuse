@@ -128,7 +128,11 @@ export class InvocationRunner {
     });
 
     const result = await handler.execute();
-    results.push({ command: command.command, exit_code: result.exitCode });
+    results.push({
+      command: command.command,
+      exit_code: result.exitCode,
+      stdout: result.stdout,
+    });
     return result.exitCode;
   }
 
