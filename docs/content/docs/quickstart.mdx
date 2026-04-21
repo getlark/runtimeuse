@@ -202,22 +202,23 @@ from runtimeuse_client import (
 async def main(ws_url: str) -> None:
     client = RuntimeUseClient(ws_url=ws_url)
 
-    result = await client.query(
-        prompt="Summarize the contents of this repository and list your favorite file.",
-        options=QueryOptions(
-            system_prompt="You are a helpful assistant.",
-            model="claude-sonnet-4-20250514", # gpt-5.4 for openai
-            pre_agent_downloadables=[
-                RuntimeEnvironmentDownloadableInterface(
-                    download_url="https://github.com/openai/codex/archive/refs/heads/main.zip",
-                    working_dir="/runtimeuse",
-                )
-            ],
-        ),
-    )
+    async with client.session() as session:
+        result = await session.query(
+            prompt="Summarize the contents of this repository and list your favorite file.",
+            options=QueryOptions(
+                system_prompt="You are a helpful assistant.",
+                model="claude-sonnet-4-20250514", # gpt-5.4 for openai
+                pre_agent_downloadables=[
+                    RuntimeEnvironmentDownloadableInterface(
+                        download_url="https://github.com/openai/codex/archive/refs/heads/main.zip",
+                        working_dir="/runtimeuse",
+                    )
+                ],
+            ),
+        )
 
-    assert isinstance(result.data, TextResult)
-    print(result.data.text)
+        assert isinstance(result.data, TextResult)
+        print(result.data.text)
 
 
 asyncio.run(main(ws_url))

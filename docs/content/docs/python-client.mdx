@@ -41,6 +41,34 @@ asyncio.run(main())
 - `data`: either `TextResult` (`.text`) or `StructuredOutputResult` (`.structured_output`)
 - `metadata`: execution metadata returned by the runtime (includes token usage when available)
 
+## Persistent Sessions
+
+Use `client.session()` when you want to run several sequential `query()` or `execute_commands()` calls against the same sandbox without paying the connection cost each time. The session keeps a single WebSocket open until the context exits.
+
+```python
+async with client.session() as session:
+    summary = await session.query(
+        prompt="Summarize the repository.",
+        options=QueryOptions(
+            system_prompt="You are a helpful assistant.",
+            model="gpt-4.1",
+        ),
+    )
+
+    commands = await session.execute_commands(
+        commands=[CommandInterface(command="ls /runtimeuse")],
+        options=ExecuteCommandsOptions(),
+    )
+```
+
+Calls inside a session are serialized: each one runs to completion (or cancellation) before the next is sent.
+
+`session.abort()` cancels only the in-flight request and leaves the session open for the next call. One-shot `client.abort()` is the equivalent for the convenience wrappers below.
+
+When the context exits, the client sends `end_session_message` and waits for the runtime to drain any artifact uploads triggered by post-agent commands before closing the socket — files written after the last call still make it out.
+
+The default `WebSocketTransport` supports persistent sessions. A custom transport must implement `PersistentTransport` for `client.session()` to work.
+
 ## Return Structured JSON
 
 Pass `output_format_json_schema_str` when your application needs machine-readable output instead of free-form text. The result will be a `StructuredOutputResult`.
@@ -194,7 +222,10 @@ result = await client.execute_commands(
 
 for item in result.results:
     print(f"{item.command} -> exit {item.exit_code}")
+    print(item.stdout)
 ```
+
+Each item in `result.results` carries `exit_code` and the buffered `stdout` from that command, alongside the real-time output delivered via `on_assistant_message`.
 
 `execute_commands()` supports the same callbacks and options as `query()`: streaming via `on_assistant_message`, artifact uploads, cancellation, timeout, and `secrets_to_redact`. Use `pre_execution_downloadables` to fetch files into the sandbox before the commands run.
 
