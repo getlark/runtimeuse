@@ -3,8 +3,8 @@ interface Command {
   cwd?: string;
   env?: Record<string, string>;
   // When true, the runner will not surface this command's stdout/stderr as
-  // assistant_message text_blocks. Use for plumbing commands (e.g. git
-  // clone/push) whose output would otherwise leak into user-facing logs.
+  // assistant_message text_blocks. Use for plumbing commands whose output
+  // would otherwise leak into user-facing logs.
   silent?: boolean;
 }
 

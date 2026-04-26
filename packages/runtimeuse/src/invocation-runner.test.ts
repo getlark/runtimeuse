@@ -216,7 +216,7 @@ describe("InvocationRunner", () => {
 
     const { runner, message, send } = createRunner({
       pre_agent_invocation_commands: [
-        { command: "git clone …", cwd: "/app", silent: true },
+        { command: "echo hidden", cwd: "/app", silent: true },
       ],
     });
 
@@ -506,7 +506,7 @@ describe("InvocationRunner.runCommandsOnly", () => {
     });
 
     const { runner, message, send } = createCommandRunner({
-      commands: [{ command: "git clone …", cwd: "/app", silent: true }],
+      commands: [{ command: "echo hidden", cwd: "/app", silent: true }],
     });
 
     await runner.runCommandsOnly(message);
