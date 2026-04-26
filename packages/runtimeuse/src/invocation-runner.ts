@@ -116,15 +116,22 @@ export class InvocationRunner {
       `Executing command: ${command.command} in directory: ${command.cwd}`,
     );
 
+    const onStdout = command.silent
+      ? undefined
+      : (stdout: string) =>
+          send({ message_type: "assistant_message", text_blocks: [stdout] });
+    const onStderr = command.silent
+      ? undefined
+      : (stderr: string) =>
+          send({ message_type: "assistant_message", text_blocks: [stderr] });
+
     const handler = new CommandHandler({
       command,
       secrets,
       logger,
       abortController,
-      onStdout: (stdout) =>
-        send({ message_type: "assistant_message", text_blocks: [stdout] }),
-      onStderr: (stderr) =>
-        send({ message_type: "assistant_message", text_blocks: [stderr] }),
+      onStdout,
+      onStderr,
     });
 
     const result = await handler.execute();
@@ -166,15 +173,22 @@ export class InvocationRunner {
         `Executing ${phase} command: ${command.command} in directory: ${command.cwd}`,
       );
 
+      const onStdout = command.silent
+        ? undefined
+        : (stdout: string) =>
+            send({ message_type: "assistant_message", text_blocks: [stdout] });
+      const onStderr = command.silent
+        ? undefined
+        : (stderr: string) =>
+            send({ message_type: "assistant_message", text_blocks: [stderr] });
+
       const handler = new CommandHandler({
         command,
         secrets,
         logger,
         abortController,
-        onStdout: (stdout) =>
-          send({ message_type: "assistant_message", text_blocks: [stdout] }),
-        onStderr: (stderr) =>
-          send({ message_type: "assistant_message", text_blocks: [stderr] }),
+        onStdout,
+        onStderr,
       });
 
       const result = await handler.execute();
