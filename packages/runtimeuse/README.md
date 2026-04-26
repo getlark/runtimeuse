@@ -178,7 +178,7 @@ When a client sends an `invocation_message`, the session:
 
 ### Command-Only Execution (no agent)
 
-The session also accepts a `command_execution_message` instead of an `invocation_message`. This runs `pre_execution_downloadables` and the provided commands, streams output as `assistant_message`s, and returns a `command_execution_result_message` with per-command exit codes. The agent handler never gets invoked. Each command can specify its own `env` and `cwd`. See the [Python client docs](../runtimeuse-client-python/README.md#command-only-execution) for usage.
+The session also accepts a `command_execution_message` instead of an `invocation_message`. This runs `pre_execution_downloadables` and the provided commands, streams stdout/stderr as `command_output_message`s (each carrying `stream`, `text`, and `command`), and returns a `command_execution_result_message` with per-command exit codes. The agent handler never gets invoked. Each command can specify its own `env` and `cwd`. See the [Python client docs](../runtimeuse-client-python/README.md#command-only-execution) for usage.
 
 ## Environment Variables
 

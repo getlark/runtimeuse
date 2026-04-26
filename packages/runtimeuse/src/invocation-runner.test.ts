@@ -184,7 +184,7 @@ describe("InvocationRunner", () => {
     );
   });
 
-  it("forwards command stdout and stderr through assistant messages", async () => {
+  it("forwards command stdout and stderr as command_output_message with stream and command", async () => {
     mockExecute.mockImplementation(async (options) => {
       options.onStdout?.("stdout data");
       options.onStderr?.("stderr data");
@@ -198,12 +198,16 @@ describe("InvocationRunner", () => {
     await runner.run(message);
 
     expect(send).toHaveBeenCalledWith({
-      message_type: "assistant_message",
-      text_blocks: ["stdout data"],
+      message_type: "command_output_message",
+      stream: "stdout",
+      text: "stdout data",
+      command: "echo hello",
     });
     expect(send).toHaveBeenCalledWith({
-      message_type: "assistant_message",
-      text_blocks: ["stderr data"],
+      message_type: "command_output_message",
+      stream: "stderr",
+      text: "stderr data",
+      command: "echo hello",
     });
   });
 
@@ -457,7 +461,7 @@ describe("InvocationRunner.runCommandsOnly", () => {
     });
   });
 
-  it("forwards stdout and stderr through assistant messages", async () => {
+  it("forwards stdout and stderr as command_output_message with stream and command", async () => {
     mockExecute.mockImplementation(async (options) => {
       options.onStdout?.("stdout data");
       options.onStderr?.("stderr data");
@@ -469,12 +473,16 @@ describe("InvocationRunner.runCommandsOnly", () => {
     await runner.runCommandsOnly(message);
 
     expect(send).toHaveBeenCalledWith({
-      message_type: "assistant_message",
-      text_blocks: ["stdout data"],
+      message_type: "command_output_message",
+      stream: "stdout",
+      text: "stdout data",
+      command: "echo hello",
     });
     expect(send).toHaveBeenCalledWith({
-      message_type: "assistant_message",
-      text_blocks: ["stderr data"],
+      message_type: "command_output_message",
+      stream: "stderr",
+      text: "stderr data",
+      command: "echo hello",
     });
   });
 

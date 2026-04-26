@@ -18,6 +18,7 @@ from .types import (
     CommandExecutionResult,
     CommandInterface,
     AssistantMessageInterface,
+    CommandOutputMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResponseMessageInterface,
     OnArtifactUploadRequestCallback,
@@ -90,6 +91,7 @@ async def _run_request_loop(
     terminal_message_type: str,
     result_cls,
     on_assistant_message,
+    on_command_output,
     on_artifact_upload_request,
     cancelled_message: str,
     logger: logging.Logger,
@@ -109,6 +111,16 @@ async def _run_request_loop(
     error_to_raise: AgentRuntimeError | None = None
 
     async for message in message_iter:
+        # Hot path: command output chunks bypass Pydantic validation entirely.
+        # The runtime owns this internal wire format, and chatty commands can
+        # emit thousands of chunks per request.
+        if message.get("message_type") == "command_output_message":
+            if not abort_event.is_set() and on_command_output is not None:
+                await on_command_output(
+                    CommandOutputMessageInterface.model_construct(**message)
+                )
+            continue
+
         try:
             message_interface = AgentRuntimeMessageInterface.model_validate(message)
         except pydantic.ValidationError:
@@ -227,6 +239,7 @@ class RuntimeUseSession:
                             terminal_message_type="result_message",
                             result_cls=ResultMessageInterface,
                             on_assistant_message=options.on_assistant_message,
+                            on_command_output=options.on_command_output,
                             on_artifact_upload_request=options.on_artifact_upload_request,
                             cancelled_message="Query was cancelled",
                             logger=logger,
@@ -265,6 +278,7 @@ class RuntimeUseSession:
                             terminal_message_type="command_execution_result_message",
                             result_cls=CommandExecutionResultMessageInterface,
                             on_assistant_message=options.on_assistant_message,
+                            on_command_output=options.on_command_output,
                             on_artifact_upload_request=options.on_artifact_upload_request,
                             cancelled_message="Command execution was cancelled",
                             logger=logger,
@@ -434,6 +448,7 @@ class RuntimeUseClient:
                     terminal_message_type="result_message",
                     result_cls=ResultMessageInterface,
                     on_assistant_message=options.on_assistant_message,
+                    on_command_output=options.on_command_output,
                     on_artifact_upload_request=options.on_artifact_upload_request,
                     cancelled_message="Query was cancelled",
                     logger=logger,
@@ -482,6 +497,7 @@ class RuntimeUseClient:
                     terminal_message_type="command_execution_result_message",
                     result_cls=CommandExecutionResultMessageInterface,
                     on_assistant_message=options.on_assistant_message,
+                    on_command_output=options.on_command_output,
                     on_artifact_upload_request=options.on_artifact_upload_request,
                     cancelled_message="Command execution was cancelled",
                     logger=logger,

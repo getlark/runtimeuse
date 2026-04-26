@@ -23,6 +23,7 @@ from .types import (
     TextResult,
     StructuredOutputResult,
     AssistantMessageInterface,
+    CommandOutputMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResponseMessageInterface,
     ErrorMessageInterface,
@@ -31,6 +32,7 @@ from .types import (
     EndSessionConfirmMessage,
     ArtifactUploadResult,
     OnAssistantMessageCallback,
+    OnCommandOutputCallback,
     OnArtifactUploadRequestCallback,
 )
 
@@ -59,6 +61,7 @@ __all__ = [
     "TextResult",
     "StructuredOutputResult",
     "AssistantMessageInterface",
+    "CommandOutputMessageInterface",
     "ArtifactUploadRequestMessageInterface",
     "ArtifactUploadResponseMessageInterface",
     "ErrorMessageInterface",
@@ -67,5 +70,6 @@ __all__ = [
     "EndSessionConfirmMessage",
     "ArtifactUploadResult",
     "OnAssistantMessageCallback",
+    "OnCommandOutputCallback",
     "OnArtifactUploadRequestCallback",
 ]

@@ -122,9 +122,19 @@ export class InvocationRunner {
       logger,
       abortController,
       onStdout: (stdout) =>
-        send({ message_type: "assistant_message", text_blocks: [stdout] }),
+        send({
+          message_type: "command_output_message",
+          stream: "stdout",
+          text: stdout,
+          command: command.command,
+        }),
       onStderr: (stderr) =>
-        send({ message_type: "assistant_message", text_blocks: [stderr] }),
+        send({
+          message_type: "command_output_message",
+          stream: "stderr",
+          text: stderr,
+          command: command.command,
+        }),
     });
 
     const result = await handler.execute();
@@ -172,9 +182,19 @@ export class InvocationRunner {
         logger,
         abortController,
         onStdout: (stdout) =>
-          send({ message_type: "assistant_message", text_blocks: [stdout] }),
+          send({
+            message_type: "command_output_message",
+            stream: "stdout",
+            text: stdout,
+            command: command.command,
+          }),
         onStderr: (stderr) =>
-          send({ message_type: "assistant_message", text_blocks: [stderr] }),
+          send({
+            message_type: "command_output_message",
+            stream: "stderr",
+            text: stderr,
+            command: command.command,
+          }),
       });
 
       const result = await handler.execute();

@@ -66,6 +66,13 @@ interface AssistantMessage {
   text_blocks: string[];
 }
 
+interface CommandOutputMessage {
+  message_type: "command_output_message";
+  stream: "stdout" | "stderr";
+  text: string;
+  command: string;
+}
+
 interface ArtifactUploadRequestMessage {
   message_type: "artifact_upload_request_message";
   filename: string;
@@ -93,6 +100,7 @@ interface EndSessionConfirmMessage {
 type OutgoingMessage =
   | ResultMessage
   | AssistantMessage
+  | CommandOutputMessage
   | ArtifactUploadRequestMessage
   | ErrorMessage
   | CommandExecutionResultMessage
@@ -116,6 +124,7 @@ export type {
   EndSessionMessage,
   ResultMessage,
   AssistantMessage,
+  CommandOutputMessage,
   ArtifactUploadRequestMessage,
   ArtifactUploadResponseMessage,
   ErrorMessage,

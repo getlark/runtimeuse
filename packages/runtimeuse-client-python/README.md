@@ -117,7 +117,8 @@ result = await client.query(
         agent_env={"MY_VAR": "value"},               # optional -- env vars for the agent
         pre_agent_downloadables=[downloadable],          # optional
         output_format_json_schema_str='...',         # optional -- omit for text response
-        on_assistant_message=on_assistant,            # optional
+        on_assistant_message=on_assistant,            # optional -- agent text blocks
+        on_command_output=on_command_output,          # optional -- pre/post command stdout/stderr
         on_artifact_upload_request=on_artifact,       # optional -- return ArtifactUploadResult
         timeout=300,                                  # optional -- seconds
     ),
@@ -151,7 +152,7 @@ result = await client.execute_commands(
         CommandInterface(command="cat /app/output/status.txt", env={"MY_VAR": "value"}),
     ],
     options=ExecuteCommandsOptions(
-        on_assistant_message=on_assistant,  # optional -- streams stdout/stderr
+        on_command_output=on_command_output,  # optional -- streams stdout/stderr
     ),
 )
 
