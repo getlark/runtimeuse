@@ -207,6 +207,26 @@ describe("InvocationRunner", () => {
     });
   });
 
+  it("does not forward stdout/stderr as assistant messages when command is silent", async () => {
+    mockExecute.mockImplementation(async (options) => {
+      expect(options.onStdout).toBeUndefined();
+      expect(options.onStderr).toBeUndefined();
+      return { exitCode: 0 };
+    });
+
+    const { runner, message, send } = createRunner({
+      pre_agent_invocation_commands: [
+        { command: "echo hidden", cwd: "/app", silent: true },
+      ],
+    });
+
+    await runner.run(message);
+
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message_type: "assistant_message" }),
+    );
+  });
+
   it("throws when pre-agent command exits non-zero; caller decides wire error", async () => {
     mockExecute.mockResolvedValueOnce({ exitCode: 2 });
     const { runner, message, send, logger } = createRunner({
@@ -476,6 +496,24 @@ describe("InvocationRunner.runCommandsOnly", () => {
       message_type: "assistant_message",
       text_blocks: ["stderr data"],
     });
+  });
+
+  it("does not forward stdout/stderr as assistant messages when command is silent", async () => {
+    mockExecute.mockImplementation(async (options) => {
+      expect(options.onStdout).toBeUndefined();
+      expect(options.onStderr).toBeUndefined();
+      return { exitCode: 0 };
+    });
+
+    const { runner, message, send } = createCommandRunner({
+      commands: [{ command: "echo hidden", cwd: "/app", silent: true }],
+    });
+
+    await runner.runCommandsOnly(message);
+
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message_type: "assistant_message" }),
+    );
   });
 
   it("returns result with exit code when command exits non-zero", async () => {

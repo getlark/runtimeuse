@@ -27,6 +27,10 @@ class CommandInterface(BaseModel):
     cwd: str | None = None
     command: str
     env: dict[str, str] | None = None
+    # When true, the runtime will not surface this command's stdout/stderr as
+    # assistant_message text_blocks. Use for plumbing commands (e.g. git
+    # clone/push) whose output would otherwise leak into user-facing logs.
+    silent: bool = False
 
 
 class InvocationMessage(BaseModel):

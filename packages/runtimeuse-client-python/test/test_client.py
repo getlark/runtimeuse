@@ -556,7 +556,7 @@ class TestExecuteCommands:
         assert len(cmd_msgs) == 1
         assert cmd_msgs[0]["source_id"] == "cmd-test"
         assert cmd_msgs[0]["commands"] == [
-            {"command": "echo hello", "cwd": None, "env": None}
+            {"command": "echo hello", "cwd": None, "env": None, "silent": False}
         ]
 
     @pytest.mark.asyncio
@@ -750,7 +750,7 @@ class TestExecuteCommands:
         ]
         assert len(cmd_msgs) == 1
         assert cmd_msgs[0]["commands"] == [
-            {"command": "echo hello", "cwd": None, "env": {"FOO": "bar"}}
+            {"command": "echo hello", "cwd": None, "env": {"FOO": "bar"}, "silent": False}
         ]
 
     @pytest.mark.asyncio

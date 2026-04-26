@@ -218,7 +218,7 @@ except CancelledException:
 | `ExecuteCommandsOptions`                  | Configuration for `client.execute_commands()` (callbacks, timeout)                   |
 | `CommandExecutionResult`                  | Return type of `execute_commands()` (`.results`)                                     |
 | `CommandResultItem`                       | Per-command result (`.command`, `.exit_code`)                                        |
-| `CommandInterface`                        | Shell command to execute (`.command`, `.cwd`, `.env`)                                |
+| `CommandInterface`                        | Shell command to execute (`.command`, `.cwd`, `.env`, `.silent`)                     |
 | `RuntimeEnvironmentDownloadableInterface` | File to download into the runtime before invocation                                  |
 
 ### Exceptions

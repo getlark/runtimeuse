@@ -2,6 +2,10 @@ interface Command {
   command: string;
   cwd?: string;
   env?: Record<string, string>;
+  // When true, the runner will not surface this command's stdout/stderr as
+  // assistant_message text_blocks. Use for plumbing commands whose output
+  // would otherwise leak into user-facing logs.
+  silent?: boolean;
 }
 
 interface RuntimeEnvironmentDownloadable {
