@@ -175,12 +175,16 @@ result = await client.query(
 
 ## Stream Assistant Messages
 
-Use `on_assistant_message` when you want intermediate progress while the run is still happening.
+Use `on_assistant_message` to receive the agent's intermediate text output while the run is still happening, and `on_command_output` for stdout/stderr from any commands the runtime executes.
 
 ```python
 async def on_assistant_message(msg) -> None:
     for block in msg.text_blocks:
         print(f"[assistant] {block}")
+
+
+async def on_command_output(msg) -> None:
+    print(f"[{msg.stream}] {msg.command}: {msg.text}", end="")
 
 
 result = await client.query(
@@ -189,9 +193,12 @@ result = await client.query(
         system_prompt="You are a helpful assistant.",
         model="gpt-4.1",
         on_assistant_message=on_assistant_message,
+        on_command_output=on_command_output,
     ),
 )
 ```
+
+Each `command_output_message` carries the `stream` (`"stdout"` or `"stderr"`), the chunk of `text`, and the original `command` string.
 
 ## Run Commands Without the Agent
 
@@ -216,7 +223,7 @@ result = await client.execute_commands(
         CommandInterface(command="cat /app/output/status.txt"),
     ],
     options=ExecuteCommandsOptions(
-        on_assistant_message=on_assistant_message,  # streams stdout/stderr
+        on_command_output=on_command_output,  # streams stdout/stderr
     ),
 )
 
@@ -227,7 +234,7 @@ for item in result.results:
 
 Each item in `result.results` carries `exit_code` and the buffered `stdout` from that command, alongside the real-time output delivered via `on_assistant_message`.
 
-`execute_commands()` supports the same callbacks and options as `query()`: streaming via `on_assistant_message`, artifact uploads, cancellation, timeout, and `secrets_to_redact`. Use `pre_execution_downloadables` to fetch files into the sandbox before the commands run.
+`execute_commands()` supports the same callbacks and options as `query()`: streaming via `on_command_output`, artifact uploads, cancellation, timeout, and `secrets_to_redact`. Use `pre_execution_downloadables` to fetch files into the sandbox before the commands run.
 
 Each `CommandInterface` accepts an optional `env` dict that is merged on top of the sandbox's `process.env` for that command.
 

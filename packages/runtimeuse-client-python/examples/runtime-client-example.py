@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from src.runtimeuse_client import (
     AssistantMessageInterface,
+    CommandOutputMessageInterface,
     AgentRuntimeError,
     RuntimeUseClient,
     QueryOptions,
@@ -22,6 +23,9 @@ async def main():
 
     async def on_assistant_message(message: AssistantMessageInterface):
         print(f"Assistant message: {message.text_blocks}")
+
+    async def on_command_output(message: CommandOutputMessageInterface):
+        print(f"[{message.stream}] {message.command}: {message.text}", end="")
 
     try:
         result = await client.query(
@@ -41,6 +45,7 @@ async def main():
                     )
                 ],
                 on_assistant_message=on_assistant_message,
+                on_command_output=on_command_output,
             ),
         )
         assert isinstance(result.data, StructuredOutputResult)

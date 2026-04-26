@@ -46,6 +46,7 @@ export type {
   CancelMessage,
   ResultMessage,
   AssistantMessage,
+  CommandOutputMessage,
   ArtifactUploadRequestMessage,
   ArtifactUploadResponseMessage,
   ErrorMessage,

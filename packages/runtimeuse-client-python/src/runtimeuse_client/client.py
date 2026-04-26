@@ -18,6 +18,7 @@ from .types import (
     CommandExecutionResult,
     CommandInterface,
     AssistantMessageInterface,
+    CommandOutputMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResponseMessageInterface,
     OnArtifactUploadRequestCallback,
@@ -90,6 +91,7 @@ async def _run_request_loop(
     terminal_message_type: str,
     result_cls,
     on_assistant_message,
+    on_command_output,
     on_artifact_upload_request,
     cancelled_message: str,
     logger: logging.Logger,
@@ -147,6 +149,12 @@ async def _run_request_loop(
             if on_assistant_message is not None:
                 assistant = AssistantMessageInterface.model_validate(message)
                 await on_assistant_message(assistant)
+            continue
+
+        if message_interface.message_type == "command_output_message":
+            if on_command_output is not None:
+                output = CommandOutputMessageInterface.model_validate(message)
+                await on_command_output(output)
             continue
 
         if message_interface.message_type == "artifact_upload_request_message":
@@ -227,6 +235,7 @@ class RuntimeUseSession:
                             terminal_message_type="result_message",
                             result_cls=ResultMessageInterface,
                             on_assistant_message=options.on_assistant_message,
+                            on_command_output=options.on_command_output,
                             on_artifact_upload_request=options.on_artifact_upload_request,
                             cancelled_message="Query was cancelled",
                             logger=logger,
@@ -265,6 +274,7 @@ class RuntimeUseSession:
                             terminal_message_type="command_execution_result_message",
                             result_cls=CommandExecutionResultMessageInterface,
                             on_assistant_message=options.on_assistant_message,
+                            on_command_output=options.on_command_output,
                             on_artifact_upload_request=options.on_artifact_upload_request,
                             cancelled_message="Command execution was cancelled",
                             logger=logger,
@@ -434,6 +444,7 @@ class RuntimeUseClient:
                     terminal_message_type="result_message",
                     result_cls=ResultMessageInterface,
                     on_assistant_message=options.on_assistant_message,
+                    on_command_output=options.on_command_output,
                     on_artifact_upload_request=options.on_artifact_upload_request,
                     cancelled_message="Query was cancelled",
                     logger=logger,
@@ -482,6 +493,7 @@ class RuntimeUseClient:
                     terminal_message_type="command_execution_result_message",
                     result_cls=CommandExecutionResultMessageInterface,
                     on_assistant_message=options.on_assistant_message,
+                    on_command_output=options.on_command_output,
                     on_artifact_upload_request=options.on_artifact_upload_request,
                     cancelled_message="Command execution was cancelled",
                     logger=logger,

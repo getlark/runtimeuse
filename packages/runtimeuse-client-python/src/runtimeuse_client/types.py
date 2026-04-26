@@ -10,6 +10,7 @@ class AgentRuntimeMessageInterface(BaseModel):
     message_type: Literal[
         "result_message",
         "assistant_message",
+        "command_output_message",
         "artifact_upload_request_message",
         "error_message",
         "command_execution_result_message",
@@ -76,6 +77,22 @@ class ResultMessageInterface(AgentRuntimeMessageInterface):
 class AssistantMessageInterface(AgentRuntimeMessageInterface):
     message_type: Literal["assistant_message"]
     text_blocks: list[str]
+
+
+class CommandOutputMessageInterface(AgentRuntimeMessageInterface):
+    """Wire-format message carrying a single chunk of command output.
+
+    Emitted by the runtime for stdout/stderr from commands run via
+    ``pre_agent_invocation_commands``, ``post_agent_invocation_commands``,
+    or :meth:`RuntimeUseClient.execute_commands`. The ``stream`` field
+    distinguishes stdout from stderr, and ``command`` carries the original
+    command string for context.
+    """
+
+    message_type: Literal["command_output_message"]
+    stream: Literal["stdout", "stderr"]
+    text: str
+    command: str
 
 
 class ArtifactUploadRequestMessageInterface(AgentRuntimeMessageInterface):
@@ -146,6 +163,7 @@ class ArtifactUploadResult(BaseModel):
 
 
 OnAssistantMessageCallback = Callable[[AssistantMessageInterface], Awaitable[None]]
+OnCommandOutputCallback = Callable[[CommandOutputMessageInterface], Awaitable[None]]
 OnArtifactUploadRequestCallback = Callable[
     [ArtifactUploadRequestMessageInterface], Awaitable[ArtifactUploadResult]
 ]
@@ -185,6 +203,8 @@ class QueryOptions:
 
     #: Called for each assistant (intermediate) message streamed back.
     on_assistant_message: OnAssistantMessageCallback | None = None
+    #: Called for each chunk of stdout/stderr emitted by pre/post commands.
+    on_command_output: OnCommandOutputCallback | None = None
     #: Called when the runtime requests an artifact upload URL.
     on_artifact_upload_request: OnArtifactUploadRequestCallback | None = None
     #: Overall timeout in seconds for the query. ``None`` means no limit.
@@ -217,6 +237,8 @@ class ExecuteCommandsOptions:
     ) = None
     #: Called for each assistant (intermediate) message streamed back.
     on_assistant_message: OnAssistantMessageCallback | None = None
+    #: Called for each chunk of stdout/stderr emitted by the commands.
+    on_command_output: OnCommandOutputCallback | None = None
     #: Called when the runtime requests an artifact upload URL.
     on_artifact_upload_request: OnArtifactUploadRequestCallback | None = None
     #: Overall timeout in seconds. ``None`` means no limit.

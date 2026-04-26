@@ -14,6 +14,7 @@ from src.runtimeuse_client import (
     TextResult,
     StructuredOutputResult,
     AssistantMessageInterface,
+    CommandOutputMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResult,
     AgentRuntimeError,
@@ -147,6 +148,87 @@ class TestAssistantMessage:
             prompt=DEFAULT_PROMPT,
             options=query_options,
         )
+
+
+# ---------------------------------------------------------------------------
+# Command output message
+# ---------------------------------------------------------------------------
+
+
+class TestCommandOutputMessage:
+    @pytest.mark.asyncio
+    async def test_stdout_dispatched_to_on_command_output(
+        self, fake_transport, make_query_options
+    ):
+        stdout_msg = {
+            "message_type": "command_output_message",
+            "stream": "stdout",
+            "text": "hello\n",
+            "command": "echo hello",
+        }
+        transport, client = fake_transport([stdout_msg, TEXT_RESULT_MSG])
+        on_output = AsyncMock()
+
+        await client.query(
+            prompt=DEFAULT_PROMPT,
+            options=make_query_options(on_command_output=on_output),
+        )
+
+        on_output.assert_awaited_once()
+        received = on_output.call_args[0][0]
+        assert isinstance(received, CommandOutputMessageInterface)
+        assert received.stream == "stdout"
+        assert received.text == "hello\n"
+        assert received.command == "echo hello"
+
+    @pytest.mark.asyncio
+    async def test_stderr_dispatched_to_on_command_output(
+        self, fake_transport, make_execute_commands_options
+    ):
+        stderr_msg = {
+            "message_type": "command_output_message",
+            "stream": "stderr",
+            "text": "boom\n",
+            "command": "false",
+        }
+        result_msg = {
+            "message_type": "command_execution_result_message",
+            "results": [{"command": "false", "exit_code": 1}],
+        }
+        transport, client = fake_transport([stderr_msg, result_msg])
+        on_output = AsyncMock()
+
+        await client.execute_commands(
+            commands=[CommandInterface(command="false")],
+            options=make_execute_commands_options(on_command_output=on_output),
+        )
+
+        on_output.assert_awaited_once()
+        received = on_output.call_args[0][0]
+        assert received.stream == "stderr"
+        assert received.text == "boom\n"
+        assert received.command == "false"
+
+    @pytest.mark.asyncio
+    async def test_command_output_ignored_without_callback(
+        self, fake_transport, query_options
+    ):
+        stdout_msg = {
+            "message_type": "command_output_message",
+            "stream": "stdout",
+            "text": "ignored\n",
+            "command": "echo ignored",
+        }
+        transport, client = fake_transport([stdout_msg, TEXT_RESULT_MSG])
+
+        # Without on_command_output, the loop should silently skip the chunk
+        # and still consume the terminal cleanly.
+        result = await client.query(
+            prompt=DEFAULT_PROMPT,
+            options=query_options,
+        )
+
+        assert isinstance(result, QueryResult)
 
 
 # ---------------------------------------------------------------------------
