@@ -17,6 +17,7 @@ from src.runtimeuse_client import (
     TextResult,
     StructuredOutputResult,
     AssistantMessageInterface,
+    CommandOutputMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResult,
     AgentRuntimeError,
@@ -120,9 +121,9 @@ class TestPrePostCommands:
     async def test_pre_command_output_streamed(
         self, client: RuntimeUseClient, make_query_options
     ):
-        received: list[AssistantMessageInterface] = []
+        received: list[CommandOutputMessageInterface] = []
 
-        async def on_msg(msg: AssistantMessageInterface):
+        async def on_output(msg: CommandOutputMessageInterface):
             received.append(msg)
 
         result = await client.query(
@@ -131,21 +132,20 @@ class TestPrePostCommands:
                 pre_agent_invocation_commands=[
                     CommandInterface(command="echo pre-sentinel")
                 ],
-                on_assistant_message=on_msg,
+                on_command_output=on_output,
             ),
         )
 
         assert isinstance(result.data, TextResult)
         assert result.data.text == "hello"
-        all_text = [block for msg in received for block in msg.text_blocks]
-        assert any("pre-sentinel" in t for t in all_text)
+        assert any("pre-sentinel" in msg.text for msg in received)
 
     async def test_post_command_output_streamed(
         self, client: RuntimeUseClient, make_query_options
     ):
-        received: list[AssistantMessageInterface] = []
+        received: list[CommandOutputMessageInterface] = []
 
-        async def on_msg(msg: AssistantMessageInterface):
+        async def on_output(msg: CommandOutputMessageInterface):
             received.append(msg)
 
         result = await client.query(
@@ -154,21 +154,20 @@ class TestPrePostCommands:
                 post_agent_invocation_commands=[
                     CommandInterface(command="echo post-sentinel")
                 ],
-                on_assistant_message=on_msg,
+                on_command_output=on_output,
             ),
         )
 
         assert isinstance(result.data, TextResult)
         assert result.data.text == "hello"
-        all_text = [block for msg in received for block in msg.text_blocks]
-        assert any("post-sentinel" in t for t in all_text)
+        assert any("post-sentinel" in msg.text for msg in received)
 
     async def test_pre_and_post_commands_both_run(
         self, client: RuntimeUseClient, make_query_options
     ):
-        received: list[AssistantMessageInterface] = []
+        received: list[CommandOutputMessageInterface] = []
 
-        async def on_msg(msg: AssistantMessageInterface):
+        async def on_output(msg: CommandOutputMessageInterface):
             received.append(msg)
 
         result = await client.query(
@@ -180,22 +179,21 @@ class TestPrePostCommands:
                 post_agent_invocation_commands=[
                     CommandInterface(command="echo post-sentinel")
                 ],
-                on_assistant_message=on_msg,
+                on_command_output=on_output,
             ),
         )
 
         assert isinstance(result.data, TextResult)
         assert result.data.text == "hello"
-        all_text = [block for msg in received for block in msg.text_blocks]
-        assert any("pre-sentinel" in t for t in all_text)
-        assert any("post-sentinel" in t for t in all_text)
+        assert any("pre-sentinel" in msg.text for msg in received)
+        assert any("post-sentinel" in msg.text for msg in received)
 
     async def test_pre_command_with_cwd(
         self, client: RuntimeUseClient, make_query_options
     ):
-        received: list[AssistantMessageInterface] = []
+        received: list[CommandOutputMessageInterface] = []
 
-        async def on_msg(msg: AssistantMessageInterface):
+        async def on_output(msg: CommandOutputMessageInterface):
             received.append(msg)
 
         await client.query(
@@ -204,19 +202,18 @@ class TestPrePostCommands:
                 pre_agent_invocation_commands=[
                     CommandInterface(command="pwd", cwd="/tmp")
                 ],
-                on_assistant_message=on_msg,
+                on_command_output=on_output,
             ),
         )
 
-        all_text = [block for msg in received for block in msg.text_blocks]
-        assert any("/tmp" in t for t in all_text)
+        assert any("/tmp" in msg.text for msg in received)
 
     async def test_post_command_with_cwd(
         self, client: RuntimeUseClient, make_query_options
     ):
-        received: list[AssistantMessageInterface] = []
+        received: list[CommandOutputMessageInterface] = []
 
-        async def on_msg(msg: AssistantMessageInterface):
+        async def on_output(msg: CommandOutputMessageInterface):
             received.append(msg)
 
         await client.query(
@@ -225,12 +222,11 @@ class TestPrePostCommands:
                 post_agent_invocation_commands=[
                     CommandInterface(command="pwd", cwd="/tmp")
                 ],
-                on_assistant_message=on_msg,
+                on_command_output=on_output,
             ),
         )
 
-        all_text = [block for msg in received for block in msg.text_blocks]
-        assert any("/tmp" in t for t in all_text)
+        assert any("/tmp" in msg.text for msg in received)
 
     async def test_failed_pre_command_raises_error(
         self, client: RuntimeUseClient, make_query_options
@@ -473,9 +469,9 @@ class TestFullInvocationLifecycle:
         artifacts_dir = f"/tmp/art-lifecycle-{uuid4()}"
         os.makedirs(artifacts_dir, exist_ok=True)
 
-        received: list[AssistantMessageInterface] = []
+        received: list[CommandOutputMessageInterface] = []
 
-        async def on_msg(msg: AssistantMessageInterface):
+        async def on_output(msg: CommandOutputMessageInterface):
             received.append(msg)
 
         async def on_artifact(
@@ -504,7 +500,7 @@ class TestFullInvocationLifecycle:
                 ],
                 artifacts_dir=artifacts_dir,
                 on_artifact_upload_request=on_artifact,
-                on_assistant_message=on_msg,
+                on_command_output=on_output,
                 timeout=20,
             ),
         )
@@ -512,11 +508,10 @@ class TestFullInvocationLifecycle:
         assert isinstance(result.data, TextResult)
         assert result.data.text == f"wrote {artifacts_dir}/output.txt"
 
-        all_text = [block for msg in received for block in msg.text_blocks]
-        assert any("runtime-payload" in t for t in all_text), (
+        assert any("runtime-payload" in msg.text for msg in received), (
             "pre-command should have cat'd the downloaded file"
         )
-        assert any("lifecycle-done" in t for t in all_text), (
+        assert any("lifecycle-done" in msg.text for msg in received), (
             "post-command should have run after the agent"
         )
 
@@ -529,9 +524,9 @@ class TestSecretsRedaction:
     async def test_secret_redacted_from_command_output(
         self, client: RuntimeUseClient, make_query_options
     ):
-        received: list[AssistantMessageInterface] = []
+        received: list[CommandOutputMessageInterface] = []
 
-        async def on_msg(msg: AssistantMessageInterface):
+        async def on_output(msg: CommandOutputMessageInterface):
             received.append(msg)
 
         result = await client.query(
@@ -541,14 +536,13 @@ class TestSecretsRedaction:
                 pre_agent_invocation_commands=[
                     CommandInterface(command="echo super-secret-value")
                 ],
-                on_assistant_message=on_msg,
+                on_command_output=on_output,
             ),
         )
 
         assert isinstance(result.data, TextResult)
-        all_text = [block for msg in received for block in msg.text_blocks]
-        assert not any("super-secret-value" in t for t in all_text)
-        assert any("[REDACTED]" in t for t in all_text)
+        assert not any("super-secret-value" in msg.text for msg in received)
+        assert any("[REDACTED]" in msg.text for msg in received)
 
     async def test_secret_redacted_from_assistant_message(
         self, client: RuntimeUseClient, make_query_options
@@ -643,20 +637,19 @@ class TestExecuteCommands:
     async def test_command_output_streamed_via_callback(
         self, client: RuntimeUseClient, make_execute_commands_options
     ):
-        received: list[AssistantMessageInterface] = []
+        received: list[CommandOutputMessageInterface] = []
 
-        async def on_msg(msg: AssistantMessageInterface):
+        async def on_output(msg: CommandOutputMessageInterface):
             received.append(msg)
 
         await client.execute_commands(
             commands=[CommandInterface(command="echo streamed-sentinel")],
             options=make_execute_commands_options(
-                on_assistant_message=on_msg, timeout=10
+                on_command_output=on_output, timeout=10
             ),
         )
 
-        all_text = [block for msg in received for block in msg.text_blocks]
-        assert any("streamed-sentinel" in t for t in all_text)
+        assert any("streamed-sentinel" in msg.text for msg in received)
 
     async def test_failed_command_returns_exit_code(
         self, client: RuntimeUseClient, make_execute_commands_options
@@ -707,50 +700,48 @@ class TestExecuteCommands:
     async def test_command_with_cwd(
         self, client: RuntimeUseClient, make_execute_commands_options
     ):
-        received: list[AssistantMessageInterface] = []
+        received: list[CommandOutputMessageInterface] = []
 
-        async def on_msg(msg: AssistantMessageInterface):
+        async def on_output(msg: CommandOutputMessageInterface):
             received.append(msg)
 
         result = await client.execute_commands(
             commands=[CommandInterface(command="pwd", cwd="/tmp")],
             options=make_execute_commands_options(
-                on_assistant_message=on_msg, timeout=10
+                on_command_output=on_output, timeout=10
             ),
         )
 
-        all_text = [block for msg in received for block in msg.text_blocks]
-        assert any("/tmp" in t for t in all_text)
+        assert any("/tmp" in msg.text for msg in received)
         assert result.results[0].stdout is not None
         assert "/tmp" in result.results[0].stdout
 
     async def test_secrets_redacted_from_output(
         self, client: RuntimeUseClient, make_execute_commands_options
     ):
-        received: list[AssistantMessageInterface] = []
+        received: list[CommandOutputMessageInterface] = []
 
-        async def on_msg(msg: AssistantMessageInterface):
+        async def on_output(msg: CommandOutputMessageInterface):
             received.append(msg)
 
         await client.execute_commands(
             commands=[CommandInterface(command="echo my-secret-token")],
             options=make_execute_commands_options(
                 secrets_to_redact=["my-secret-token"],
-                on_assistant_message=on_msg,
+                on_command_output=on_output,
                 timeout=10,
             ),
         )
 
-        all_text = [block for msg in received for block in msg.text_blocks]
-        assert not any("my-secret-token" in t for t in all_text)
-        assert any("[REDACTED]" in t for t in all_text)
+        assert not any("my-secret-token" in msg.text for msg in received)
+        assert any("[REDACTED]" in msg.text for msg in received)
 
     async def test_cancellation(
         self, ws_url: str, make_execute_commands_options
     ):
         client = RuntimeUseClient(ws_url=ws_url)
 
-        async def abort_on_first(msg: AssistantMessageInterface):
+        async def abort_on_first(msg: CommandOutputMessageInterface):
             client.abort()
 
         with pytest.raises((CancelledException, TimeoutError)):
@@ -761,7 +752,7 @@ class TestExecuteCommands:
                     ),
                 ],
                 options=make_execute_commands_options(
-                    on_assistant_message=abort_on_first, timeout=5
+                    on_command_output=abort_on_first, timeout=5
                 ),
             )
 
