@@ -111,6 +111,16 @@ async def _run_request_loop(
     error_to_raise: AgentRuntimeError | None = None
 
     async for message in message_iter:
+        # Hot path: command output chunks bypass Pydantic validation entirely.
+        # The runtime owns this internal wire format, and chatty commands can
+        # emit thousands of chunks per request.
+        if message.get("message_type") == "command_output_message":
+            if not abort_event.is_set() and on_command_output is not None:
+                await on_command_output(
+                    CommandOutputMessageInterface.model_construct(**message)
+                )
+            continue
+
         try:
             message_interface = AgentRuntimeMessageInterface.model_validate(message)
         except pydantic.ValidationError:
@@ -149,12 +159,6 @@ async def _run_request_loop(
             if on_assistant_message is not None:
                 assistant = AssistantMessageInterface.model_validate(message)
                 await on_assistant_message(assistant)
-            continue
-
-        if message_interface.message_type == "command_output_message":
-            if on_command_output is not None:
-                output = CommandOutputMessageInterface.model_validate(message)
-                await on_command_output(output)
             continue
 
         if message_interface.message_type == "artifact_upload_request_message":
