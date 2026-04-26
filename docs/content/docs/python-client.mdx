@@ -229,7 +229,7 @@ Each item in `result.results` carries `exit_code` and the buffered `stdout` from
 
 `execute_commands()` supports the same callbacks and options as `query()`: streaming via `on_assistant_message`, artifact uploads, cancellation, timeout, and `secrets_to_redact`. Use `pre_execution_downloadables` to fetch files into the sandbox before the commands run.
 
-Each `CommandInterface` accepts an optional `env` dict that is merged on top of the sandbox's `process.env` for that command. Set `silent=True` to suppress a command's stdout/stderr from being forwarded as `assistant_message` text_blocks -- useful for plumbing commands (e.g. `git clone`/`git push`) whose output shouldn't reach the user-facing stream. Exit codes and error semantics are unchanged.
+Each `CommandInterface` accepts an optional `env` dict that is merged on top of the sandbox's `process.env` for that command. Set `silent=True` to suppress a command's stdout/stderr from being forwarded as `assistant_message` text_blocks -- useful for plumbing commands whose output shouldn't reach the user-facing stream. Exit codes and error semantics are unchanged.
 
 ## Cancel a Run
 
