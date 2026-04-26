@@ -185,6 +185,7 @@ The session also accepts a `command_execution_message` instead of an `invocation
 Environment variables can be injected at two levels:
 
 - **Per-command (`Command.env`)** -- each command in `pre_agent_invocation_commands`, `post_agent_invocation_commands`, or `command_execution_message.commands` can carry its own `env` map. These are merged on top of `process.env` when the command is spawned.
+- **Per-command (`Command.silent`)** -- set `silent: true` to suppress a command's stdout/stderr from being forwarded as `assistant_message` text_blocks. Use it for plumbing commands (e.g. `git clone`/`git push`) whose output should not appear in the user-facing message stream. Exit codes and error semantics are unchanged.
 - **Per-invocation (`InvocationMessage.agent_env`)** -- environment variables passed to the agent handler. The Claude handler merges these on top of `process.env` when calling the Claude Agent SDK. Custom handlers receive these via `AgentInvocation.env`.
 
 ## Artifact Management
