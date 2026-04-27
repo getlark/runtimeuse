@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -19,6 +20,7 @@ from .types import (
     CommandInterface,
     AssistantMessageInterface,
     CommandOutputMessageInterface,
+    HeartbeatMessageInterface,
     ArtifactUploadRequestMessageInterface,
     ArtifactUploadResponseMessageInterface,
     OnArtifactUploadRequestCallback,
@@ -65,14 +67,41 @@ async def _handle_artifact_request(
     on_artifact_upload_request,
     send_queue: asyncio.Queue[dict],
     logger: logging.Logger,
+    artifact_upload_callback_timeout: float | None,
 ) -> None:
     logger.info(
         f"Received artifact upload request message from agent runtime: {message}"
     )
     if on_artifact_upload_request is None:
+        logger.warning(
+            "Received artifact upload request with no artifact upload callback configured"
+        )
         return
     req = ArtifactUploadRequestMessageInterface.model_validate(message)
-    upload_result = await on_artifact_upload_request(req)
+    callback_started_at = time.perf_counter()
+    logger.info(
+        "Starting artifact upload callback for filename=%s filepath=%s",
+        req.filename,
+        req.filepath,
+    )
+    try:
+        async with asyncio.timeout(artifact_upload_callback_timeout):
+            upload_result = await on_artifact_upload_request(req)
+    except TimeoutError as exc:
+        raise AgentRuntimeError(
+            "on_artifact_upload_request callback timed out",
+            metadata={
+                "timeout_type": "artifact_upload_callback_timeout",
+                "timeout": artifact_upload_callback_timeout,
+                "filename": req.filename,
+                "filepath": req.filepath,
+            },
+        ) from exc
+    logger.info(
+        "Finished artifact upload callback for filename=%s in %.3fs",
+        req.filename,
+        time.perf_counter() - callback_started_at,
+    )
     response = ArtifactUploadResponseMessageInterface(
         message_type="artifact_upload_response_message",
         filename=req.filename,
@@ -81,6 +110,11 @@ async def _handle_artifact_request(
         content_type=upload_result.content_type,
     )
     await send_queue.put(response.model_dump(mode="json"))
+    logger.info(
+        "Queued artifact upload response for filename=%s filepath=%s",
+        req.filename,
+        req.filepath,
+    )
 
 
 async def _run_request_loop(
@@ -93,6 +127,9 @@ async def _run_request_loop(
     on_assistant_message,
     on_command_output,
     on_artifact_upload_request,
+    idle_timeout: float | None,
+    assistant_callback_timeout: float | None,
+    artifact_upload_callback_timeout: float | None,
     cancelled_message: str,
     logger: logging.Logger,
 ):
@@ -109,12 +146,63 @@ async def _run_request_loop(
     """
     wire_result = None
     error_to_raise: AgentRuntimeError | None = None
+    message_count = 0
+    last_message_type: str | None = None
+    phase = "waiting_for_message"
 
-    async for message in message_iter:
+    logger.info(
+        "Starting request loop terminal_message_type=%s idle_timeout=%s",
+        terminal_message_type,
+        idle_timeout,
+    )
+
+    aiter = message_iter.__aiter__()
+    while True:
+        phase = "waiting_for_message"
+        try:
+            if idle_timeout is None:
+                message = await anext(aiter)
+            else:
+                async with asyncio.timeout(idle_timeout):
+                    message = await anext(aiter)
+        except StopAsyncIteration:
+            logger.info(
+                "Runtime message stream ended after %s messages before terminal",
+                message_count,
+            )
+            break
+        except TimeoutError as exc:
+            logger.error(
+                "No message received from agent runtime for %ss "
+                "(last_message_type=%s, message_count=%s, phase=%s)",
+                idle_timeout,
+                last_message_type,
+                message_count,
+                phase,
+            )
+            raise AgentRuntimeError(
+                f"No message received from agent runtime for {idle_timeout}s",
+                metadata={
+                    "timeout_type": "idle_timeout",
+                    "idle_timeout": idle_timeout,
+                    "last_message_type": last_message_type,
+                    "message_count": message_count,
+                    "phase": phase,
+                },
+            ) from exc
+
+        message_count += 1
+        last_message_type = message.get("message_type")
+        logger.info(
+            "Received message from agent runtime type=%s count=%s",
+            last_message_type,
+            message_count,
+        )
+
         # Hot path: command output chunks bypass Pydantic validation entirely.
         # The runtime owns this internal wire format, and chatty commands can
         # emit thousands of chunks per request.
-        if message.get("message_type") == "command_output_message":
+        if last_message_type == "command_output_message":
             if not abort_event.is_set() and on_command_output is not None:
                 await on_command_output(
                     CommandOutputMessageInterface.model_construct(**message)
@@ -124,16 +212,21 @@ async def _run_request_loop(
         try:
             message_interface = AgentRuntimeMessageInterface.model_validate(message)
         except pydantic.ValidationError:
-            logger.error(
-                f"Received unknown message type from agent runtime: {message}"
+            logger.error(f"Received unknown message type from agent runtime: {message}")
+            continue
+
+        if message_interface.message_type == "heartbeat_message":
+            heartbeat = HeartbeatMessageInterface.model_validate(message)
+            logger.info(
+                "Received heartbeat from agent runtime phase=%s elapsed_ms=%s",
+                heartbeat.phase,
+                heartbeat.elapsed_ms,
             )
             continue
 
         if message_interface.message_type == terminal_message_type:
             wire_result = result_cls.model_validate(message)
-            logger.info(
-                f"Received terminal message from agent runtime: {message}"
-            )
+            logger.info(f"Received terminal message from agent runtime: {message}")
             break
 
         if message_interface.message_type == "error_message":
@@ -158,18 +251,41 @@ async def _run_request_loop(
         if message_interface.message_type == "assistant_message":
             if on_assistant_message is not None:
                 assistant = AssistantMessageInterface.model_validate(message)
-                await on_assistant_message(assistant)
+                phase = "assistant_callback"
+                callback_started_at = time.perf_counter()
+                logger.info("Starting assistant message callback")
+                try:
+                    async with asyncio.timeout(assistant_callback_timeout):
+                        await on_assistant_message(assistant)
+                except TimeoutError as exc:
+                    raise AgentRuntimeError(
+                        "on_assistant_message callback timed out",
+                        metadata={
+                            "timeout_type": "assistant_callback_timeout",
+                            "timeout": assistant_callback_timeout,
+                            "last_message_type": last_message_type,
+                            "message_count": message_count,
+                            "phase": phase,
+                        },
+                    ) from exc
+                logger.info(
+                    "Finished assistant message callback in %.3fs",
+                    time.perf_counter() - callback_started_at,
+                )
             continue
 
         if message_interface.message_type == "artifact_upload_request_message":
+            phase = "artifact_upload_callback"
             await _handle_artifact_request(
-                message, on_artifact_upload_request, send_queue, logger
+                message,
+                on_artifact_upload_request,
+                send_queue,
+                logger,
+                artifact_upload_callback_timeout,
             )
             continue
 
-        logger.info(
-            f"Received non-result message from agent runtime: {message}"
-        )
+        logger.info(f"Received non-result message from agent runtime: {message}")
 
     if abort_event.is_set():
         raise CancelledException(cancelled_message)
@@ -180,6 +296,7 @@ async def _run_request_loop(
     if wire_result is None:
         raise AgentRuntimeError("No result message received")
 
+    logger.info("Request loop completed after %s messages", message_count)
     return wire_result
 
 
@@ -227,6 +344,14 @@ class RuntimeUseSession:
             send_queue: asyncio.Queue[dict] = asyncio.Queue()
             self._send_queue = send_queue
             await send_queue.put(invocation.model_dump(mode="json"))
+            logger.info(
+                "Queued session query invocation source_id=%s model=%s "
+                "timeout=%s idle_timeout=%s",
+                options.source_id,
+                options.model,
+                options.timeout,
+                options.idle_timeout,
+            )
 
             try:
                 async with asyncio.timeout(options.timeout):
@@ -241,11 +366,21 @@ class RuntimeUseSession:
                             on_assistant_message=options.on_assistant_message,
                             on_command_output=options.on_command_output,
                             on_artifact_upload_request=options.on_artifact_upload_request,
+                            idle_timeout=options.idle_timeout,
+                            assistant_callback_timeout=options.assistant_callback_timeout,
+                            artifact_upload_callback_timeout=options.artifact_upload_callback_timeout,
                             cancelled_message="Query was cancelled",
                             logger=logger,
                         )
                     finally:
                         await message_iter.aclose()
+            except TimeoutError:
+                logger.exception(
+                    "Session query timed out source_id=%s timeout=%s",
+                    options.source_id,
+                    options.timeout,
+                )
+                raise
             finally:
                 self._send_queue = None
 
@@ -266,6 +401,14 @@ class RuntimeUseSession:
             send_queue: asyncio.Queue[dict] = asyncio.Queue()
             self._send_queue = send_queue
             await send_queue.put(message.model_dump(mode="json"))
+            logger.info(
+                "Queued session command execution source_id=%s timeout=%s "
+                "idle_timeout=%s command_count=%s",
+                options.source_id,
+                options.timeout,
+                options.idle_timeout,
+                len(commands),
+            )
 
             try:
                 async with asyncio.timeout(options.timeout):
@@ -280,11 +423,21 @@ class RuntimeUseSession:
                             on_assistant_message=options.on_assistant_message,
                             on_command_output=options.on_command_output,
                             on_artifact_upload_request=options.on_artifact_upload_request,
+                            idle_timeout=options.idle_timeout,
+                            assistant_callback_timeout=options.assistant_callback_timeout,
+                            artifact_upload_callback_timeout=options.artifact_upload_callback_timeout,
                             cancelled_message="Command execution was cancelled",
                             logger=logger,
                         )
                     finally:
                         await message_iter.aclose()
+            except TimeoutError:
+                logger.exception(
+                    "Session command execution timed out source_id=%s timeout=%s",
+                    options.source_id,
+                    options.timeout,
+                )
+                raise
             finally:
                 self._send_queue = None
 
@@ -327,9 +480,7 @@ class RuntimeUseSession:
             )
             return response.model_dump(mode="json")
 
-        await end_session(
-            on_message=on_message, timeout_s=self._end_session_timeout_s
-        )
+        await end_session(on_message=on_message, timeout_s=self._end_session_timeout_s)
 
 
 class RuntimeUseClient:
@@ -438,6 +589,13 @@ class RuntimeUseClient:
         send_queue: asyncio.Queue[dict] = asyncio.Queue()
         self._send_queue = send_queue
         await send_queue.put(invocation.model_dump(mode="json"))
+        logger.info(
+            "Queued query invocation source_id=%s model=%s timeout=%s idle_timeout=%s",
+            options.source_id,
+            options.model,
+            options.timeout,
+            options.idle_timeout,
+        )
 
         try:
             async with asyncio.timeout(options.timeout):
@@ -450,9 +608,19 @@ class RuntimeUseClient:
                     on_assistant_message=options.on_assistant_message,
                     on_command_output=options.on_command_output,
                     on_artifact_upload_request=options.on_artifact_upload_request,
+                    idle_timeout=options.idle_timeout,
+                    assistant_callback_timeout=options.assistant_callback_timeout,
+                    artifact_upload_callback_timeout=options.artifact_upload_callback_timeout,
                     cancelled_message="Query was cancelled",
                     logger=logger,
                 )
+        except TimeoutError:
+            logger.exception(
+                "Query timed out source_id=%s timeout=%s",
+                options.source_id,
+                options.timeout,
+            )
+            raise
         finally:
             self._send_queue = None
 
@@ -487,6 +655,14 @@ class RuntimeUseClient:
         send_queue: asyncio.Queue[dict] = asyncio.Queue()
         self._send_queue = send_queue
         await send_queue.put(message.model_dump(mode="json"))
+        logger.info(
+            "Queued command execution source_id=%s timeout=%s idle_timeout=%s "
+            "command_count=%s",
+            options.source_id,
+            options.timeout,
+            options.idle_timeout,
+            len(commands),
+        )
 
         try:
             async with asyncio.timeout(options.timeout):
@@ -499,9 +675,19 @@ class RuntimeUseClient:
                     on_assistant_message=options.on_assistant_message,
                     on_command_output=options.on_command_output,
                     on_artifact_upload_request=options.on_artifact_upload_request,
+                    idle_timeout=options.idle_timeout,
+                    assistant_callback_timeout=options.assistant_callback_timeout,
+                    artifact_upload_callback_timeout=options.artifact_upload_callback_timeout,
                     cancelled_message="Command execution was cancelled",
                     logger=logger,
                 )
+        except TimeoutError:
+            logger.exception(
+                "Command execution timed out source_id=%s timeout=%s",
+                options.source_id,
+                options.timeout,
+            )
+            raise
         finally:
             self._send_queue = None
 

@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any, cast
 from unittest.mock import AsyncMock
 import pytest
 
@@ -394,6 +395,117 @@ class TestTimeout:
                 prompt=DEFAULT_PROMPT,
                 options=make_query_options(timeout=0.05),
             )
+
+    @pytest.mark.asyncio
+    async def test_idle_timeout_raises_with_diagnostics(self, make_query_options):
+        async def idle_transport(
+            send_queue: asyncio.Queue[dict],
+        ):
+            yield {"message_type": "assistant_message", "text_blocks": ["working"]}
+            await asyncio.sleep(10)
+            yield TEXT_RESULT_MSG  # pragma: no cover
+
+        client = RuntimeUseClient(transport=idle_transport)
+
+        with pytest.raises(
+            AgentRuntimeError, match="No message received from agent runtime"
+        ) as exc_info:
+            await client.query(
+                prompt=DEFAULT_PROMPT,
+                options=make_query_options(idle_timeout=0.05, timeout=1),
+            )
+
+        assert exc_info.value.metadata == {
+            "timeout_type": "idle_timeout",
+            "idle_timeout": 0.05,
+            "last_message_type": "assistant_message",
+            "message_count": 1,
+            "phase": "waiting_for_message",
+        }
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_message_allows_query_to_continue(
+        self, fake_transport, make_query_options
+    ):
+        transport, client = fake_transport(
+            [
+                {
+                    "message_type": "heartbeat_message",
+                    "phase": "request_in_flight",
+                    "elapsed_ms": 123,
+                },
+                TEXT_RESULT_MSG,
+            ]
+        )
+        on_assistant = AsyncMock()
+
+        result = await client.query(
+            prompt=DEFAULT_PROMPT,
+            options=make_query_options(on_assistant_message=on_assistant),
+        )
+
+        on_assistant.assert_not_awaited()
+        assert isinstance(result.data, TextResult)
+
+    @pytest.mark.asyncio
+    async def test_assistant_callback_timeout_raises(self, fake_transport, make_query_options):
+        transport, client = fake_transport(
+            [{"message_type": "assistant_message", "text_blocks": ["slow"]}]
+        )
+
+        async def slow_assistant(_message):
+            await asyncio.sleep(10)
+
+        with pytest.raises(
+            AgentRuntimeError, match="on_assistant_message callback timed out"
+        ) as exc_info:
+            await client.query(
+                prompt=DEFAULT_PROMPT,
+                options=make_query_options(
+                    on_assistant_message=slow_assistant,
+                    assistant_callback_timeout=0.05,
+                    timeout=1,
+                ),
+            )
+
+        metadata = exc_info.value.metadata
+        assert metadata is not None
+        assert metadata["timeout_type"] == "assistant_callback_timeout"
+        assert metadata["timeout"] == 0.05
+
+    @pytest.mark.asyncio
+    async def test_artifact_upload_callback_timeout_raises(
+        self, fake_transport, make_query_options
+    ):
+        upload_request = {
+            "message_type": "artifact_upload_request_message",
+            "filename": "slow.txt",
+            "filepath": "/tmp/slow.txt",
+        }
+        transport, client = fake_transport([upload_request])
+
+        async def slow_artifact(_message):
+            await asyncio.sleep(10)
+
+        with pytest.raises(
+            AgentRuntimeError, match="on_artifact_upload_request callback timed out"
+        ) as exc_info:
+            await client.query(
+                prompt=DEFAULT_PROMPT,
+                options=make_query_options(
+                    artifacts_dir="/tmp/artifacts",
+                    on_artifact_upload_request=slow_artifact,
+                    artifact_upload_callback_timeout=0.05,
+                    timeout=1,
+                ),
+            )
+
+        assert exc_info.value.metadata == {
+            "timeout_type": "artifact_upload_callback_timeout",
+            "timeout": 0.05,
+            "filename": "slow.txt",
+            "filepath": "/tmp/slow.txt",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -1111,7 +1223,7 @@ class TestStaleTerminalDraining:
         transport = _StaleBufferTransport(
             [filler, cancel_terminal, result_after]
         )
-        client = RuntimeUseClient(transport=transport)
+        client = RuntimeUseClient(transport=cast(Any, transport))
 
         async with client.session() as session:
             async def abort_on_first(_msg):
@@ -1128,4 +1240,5 @@ class TestStaleTerminalDraining:
                 prompt="two", options=make_query_options()
             )
 
+        assert isinstance(second.data, TextResult)
         assert second.data.text == "clean"

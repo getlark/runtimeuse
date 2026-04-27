@@ -14,6 +14,7 @@ class AgentRuntimeMessageInterface(BaseModel):
         "artifact_upload_request_message",
         "error_message",
         "command_execution_result_message",
+        "heartbeat_message",
     ]
 
 
@@ -93,6 +94,12 @@ class CommandOutputMessageInterface(AgentRuntimeMessageInterface):
     stream: Literal["stdout", "stderr"]
     text: str
     command: str
+
+
+class HeartbeatMessageInterface(AgentRuntimeMessageInterface):
+    message_type: Literal["heartbeat_message"]
+    phase: str
+    elapsed_ms: int
 
 
 class ArtifactUploadRequestMessageInterface(AgentRuntimeMessageInterface):
@@ -209,6 +216,12 @@ class QueryOptions:
     on_artifact_upload_request: OnArtifactUploadRequestCallback | None = None
     #: Overall timeout in seconds for the query. ``None`` means no limit.
     timeout: float | None = None
+    #: Maximum idle time in seconds without any runtime message.
+    idle_timeout: float | None = None
+    #: Maximum time in seconds allowed for the assistant message callback.
+    assistant_callback_timeout: float | None = None
+    #: Maximum time in seconds allowed for the artifact upload callback.
+    artifact_upload_callback_timeout: float | None = None
     #: Logger instance; falls back to the module-level logger when ``None``.
     logger: logging.Logger | None = None
 
@@ -243,6 +256,12 @@ class ExecuteCommandsOptions:
     on_artifact_upload_request: OnArtifactUploadRequestCallback | None = None
     #: Overall timeout in seconds. ``None`` means no limit.
     timeout: float | None = None
+    #: Maximum idle time in seconds without any runtime message.
+    idle_timeout: float | None = None
+    #: Maximum time in seconds allowed for the assistant message callback.
+    assistant_callback_timeout: float | None = None
+    #: Maximum time in seconds allowed for the artifact upload callback.
+    artifact_upload_callback_timeout: float | None = None
     #: Logger instance; falls back to the module-level logger when ``None``.
     logger: logging.Logger | None = None
 

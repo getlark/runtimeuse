@@ -22,7 +22,16 @@ export function createRedactingLogger(
   secrets: string[],
 ): Logger {
   const redact = (args: unknown[]) =>
-    args.map((a) => redactSecrets(a, secrets));
+    args.map((a) => {
+      // Error instances have non-enumerable message/stack, so passing them
+      // through redactSecrets (which uses Object.entries) would produce `{}`
+      // and lose the error details. Convert to a string first so the stack
+      // is preserved and can still be redacted.
+      if (a instanceof Error) {
+        return redactSecrets(a.stack ?? a.message, secrets);
+      }
+      return redactSecrets(a, secrets);
+    });
   return {
     log: (...args: unknown[]) => inner.log(...redact(args)),
     warn: (...args: unknown[]) => inner.warn(...redact(args)),

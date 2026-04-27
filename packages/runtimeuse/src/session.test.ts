@@ -79,13 +79,14 @@ class MockWebSocket extends EventEmitter {
   });
 }
 
-function createSession() {
+function createSession(overrides: Partial<SessionConfig> = {}) {
   const ws = new MockWebSocket();
   const uploadTracker = new UploadTracker();
   const config: SessionConfig = {
     handler: mockHandler,
     uploadTracker,
     postInvocationDelayMs: 0,
+    ...overrides,
   };
   const session = new WebSocketSession(ws as any, config);
   return { session, ws, config, uploadTracker };
@@ -292,6 +293,103 @@ describe("WebSocketSession", () => {
       await done;
 
       expect(ws.close).toHaveBeenCalled();
+    });
+  });
+
+  describe("heartbeats", () => {
+    it("sends heartbeat messages while a request is in flight", async () => {
+      let resolveAgent!: () => void;
+      mockHandlerRun.mockImplementation(
+        () =>
+          new Promise((r) => {
+            resolveAgent = () =>
+              r({
+                type: "structured_output",
+                structuredOutput: { success: true },
+              } as AgentResult);
+          }),
+      );
+
+      const { session, ws } = createSession({ heartbeatIntervalMs: 5 });
+      const done = session.run();
+
+      sendMessage(ws, INVOCATION_MSG);
+      await waitForSentCount(ws, (m) => m.message_type === "heartbeat_message");
+
+      const sent = parseSentMessages(ws);
+      const heartbeat = sent.find((m) => m.message_type === "heartbeat_message");
+      expect(heartbeat).toMatchObject({
+        message_type: "heartbeat_message",
+        phase: "request_in_flight",
+      });
+      expect(heartbeat!.elapsed_ms).toBeGreaterThanOrEqual(0);
+
+      resolveAgent();
+      await waitForTerminal(ws);
+      await endSession(ws, done);
+    });
+
+    it("stops sending heartbeats after the terminal message", async () => {
+      let resolveAgent!: () => void;
+      mockHandlerRun.mockImplementation(
+        () =>
+          new Promise((r) => {
+            resolveAgent = () =>
+              r({
+                type: "structured_output",
+                structuredOutput: { success: true },
+              } as AgentResult);
+          }),
+      );
+
+      const { session, ws } = createSession({ heartbeatIntervalMs: 5 });
+      const done = session.run();
+
+      sendMessage(ws, INVOCATION_MSG);
+      await waitForSentCount(ws, (m) => m.message_type === "heartbeat_message");
+      resolveAgent();
+      await waitForTerminal(ws);
+
+      const heartbeatCount = parseSentMessages(ws).filter(
+        (m) => m.message_type === "heartbeat_message",
+      ).length;
+      await new Promise((r) => setTimeout(r, 25));
+      const laterHeartbeatCount = parseSentMessages(ws).filter(
+        (m) => m.message_type === "heartbeat_message",
+      ).length;
+      expect(laterHeartbeatCount).toBe(heartbeatCount);
+
+      await endSession(ws, done);
+    });
+
+    it("does not keep sending heartbeats after socket close aborts the request", async () => {
+      mockHandlerRun.mockImplementation(
+        (invocation) =>
+          new Promise((_resolve, reject) => {
+            invocation.signal.addEventListener("abort", () => {
+              reject(new Error("aborted"));
+            });
+          }),
+      );
+
+      const { session, ws } = createSession({ heartbeatIntervalMs: 5 });
+      const done = session.run();
+
+      sendMessage(ws, INVOCATION_MSG);
+      await waitForSentCount(ws, (m) => m.message_type === "heartbeat_message");
+      ws.close();
+      await tick();
+
+      const heartbeatCount = parseSentMessages(ws).filter(
+        (m) => m.message_type === "heartbeat_message",
+      ).length;
+      await new Promise((r) => setTimeout(r, 25));
+      const laterHeartbeatCount = parseSentMessages(ws).filter(
+        (m) => m.message_type === "heartbeat_message",
+      ).length;
+      expect(laterHeartbeatCount).toBe(heartbeatCount);
+
+      await done;
     });
   });
 
