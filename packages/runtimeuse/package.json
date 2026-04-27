@@ -1,6 +1,6 @@
 {
   "name": "runtimeuse",
-  "version": "0.14.0",
+  "version": "0.14.1",
   "description": "AI agent runtime with WebSocket protocol, artifact handling, and secret management",
   "license": "FSL",
   "type": "module",
