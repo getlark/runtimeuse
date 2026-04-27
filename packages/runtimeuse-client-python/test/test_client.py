@@ -508,6 +508,95 @@ class TestTimeout:
         }
 
 
+class _ClosableOneShotTransport:
+    def __init__(self, message: dict):
+        self.message = message
+        self.closed = False
+
+    async def __call__(self, send_queue: asyncio.Queue[dict]):
+        try:
+            yield self.message
+            await asyncio.sleep(10)  # pragma: no cover
+        finally:
+            self.closed = True
+
+
+class TestOneShotTransportCleanup:
+    @pytest.mark.asyncio
+    async def test_query_closes_transport_iterator_after_terminal(
+        self, make_query_options
+    ):
+        transport = _ClosableOneShotTransport(TEXT_RESULT_MSG)
+        client = RuntimeUseClient(transport=transport)
+
+        await client.query(prompt=DEFAULT_PROMPT, options=make_query_options())
+
+        assert transport.closed is True
+
+    @pytest.mark.asyncio
+    async def test_execute_commands_closes_transport_iterator_after_terminal(
+        self, make_execute_commands_options
+    ):
+        result_msg = {
+            "message_type": "command_execution_result_message",
+            "results": [{"command": "echo hi", "exit_code": 0, "stdout": "hi\n"}],
+        }
+        transport = _ClosableOneShotTransport(result_msg)
+        client = RuntimeUseClient(transport=transport)
+
+        await client.execute_commands(
+            commands=[CommandInterface(command="echo hi")],
+            options=make_execute_commands_options(),
+        )
+
+        assert transport.closed is True
+
+
+class TestWebSocketTransportCleanup:
+    @pytest.mark.asyncio
+    async def test_call_closes_connected_request_iterator(self, monkeypatch):
+        import src.runtimeuse_client.transports.websocket_transport as ws_transport
+
+        request_closed = False
+
+        class FakeConnectContext:
+            async def __aenter__(self):
+                return object()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+        class FakeConnectedWebSocketTransport:
+            def __init__(self, ws):
+                self.ws = ws
+
+            async def request(self, send_queue: asyncio.Queue[dict]):
+                nonlocal request_closed
+                try:
+                    yield TEXT_RESULT_MSG
+                    await asyncio.sleep(10)  # pragma: no cover
+                finally:
+                    request_closed = True
+
+        monkeypatch.setattr(
+            ws_transport.websockets,
+            "connect",
+            lambda *args, **kwargs: FakeConnectContext(),
+        )
+        monkeypatch.setattr(
+            ws_transport,
+            "ConnectedWebSocketTransport",
+            FakeConnectedWebSocketTransport,
+        )
+
+        iterator = ws_transport.WebSocketTransport("ws://example.test")(asyncio.Queue())
+
+        assert await anext(iterator) == TEXT_RESULT_MSG
+        await iterator.aclose()
+
+        assert request_closed is True
+
+
 # ---------------------------------------------------------------------------
 # Unknown / malformed messages
 # ---------------------------------------------------------------------------

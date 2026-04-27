@@ -125,10 +125,12 @@ class WebSocketTransport:
 
         async with websockets.connect(self.ws_url, open_timeout=60) as ws:
             connected = ConnectedWebSocketTransport(ws)
+            message_iter = connected.request(send_queue)
             try:
-                async for message in connected.request(send_queue):
+                async for message in message_iter:
                     yield message
             finally:
+                await message_iter.aclose()
                 _logger.info("Agent runtime connection closed")
 
     @asynccontextmanager

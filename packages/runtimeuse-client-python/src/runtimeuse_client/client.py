@@ -599,21 +599,25 @@ class RuntimeUseClient:
 
         try:
             async with asyncio.timeout(options.timeout):
-                wire = await _run_request_loop(
-                    self._transport(send_queue=send_queue),
-                    send_queue,
-                    self._abort_event,
-                    terminal_message_type="result_message",
-                    result_cls=ResultMessageInterface,
-                    on_assistant_message=options.on_assistant_message,
-                    on_command_output=options.on_command_output,
-                    on_artifact_upload_request=options.on_artifact_upload_request,
-                    idle_timeout=options.idle_timeout,
-                    assistant_callback_timeout=options.assistant_callback_timeout,
-                    artifact_upload_callback_timeout=options.artifact_upload_callback_timeout,
-                    cancelled_message="Query was cancelled",
-                    logger=logger,
-                )
+                message_iter = self._transport(send_queue=send_queue)
+                try:
+                    wire = await _run_request_loop(
+                        message_iter,
+                        send_queue,
+                        self._abort_event,
+                        terminal_message_type="result_message",
+                        result_cls=ResultMessageInterface,
+                        on_assistant_message=options.on_assistant_message,
+                        on_command_output=options.on_command_output,
+                        on_artifact_upload_request=options.on_artifact_upload_request,
+                        idle_timeout=options.idle_timeout,
+                        assistant_callback_timeout=options.assistant_callback_timeout,
+                        artifact_upload_callback_timeout=options.artifact_upload_callback_timeout,
+                        cancelled_message="Query was cancelled",
+                        logger=logger,
+                    )
+                finally:
+                    await message_iter.aclose()
         except TimeoutError:
             logger.exception(
                 "Query timed out source_id=%s timeout=%s",
@@ -666,21 +670,25 @@ class RuntimeUseClient:
 
         try:
             async with asyncio.timeout(options.timeout):
-                wire = await _run_request_loop(
-                    self._transport(send_queue=send_queue),
-                    send_queue,
-                    self._abort_event,
-                    terminal_message_type="command_execution_result_message",
-                    result_cls=CommandExecutionResultMessageInterface,
-                    on_assistant_message=options.on_assistant_message,
-                    on_command_output=options.on_command_output,
-                    on_artifact_upload_request=options.on_artifact_upload_request,
-                    idle_timeout=options.idle_timeout,
-                    assistant_callback_timeout=options.assistant_callback_timeout,
-                    artifact_upload_callback_timeout=options.artifact_upload_callback_timeout,
-                    cancelled_message="Command execution was cancelled",
-                    logger=logger,
-                )
+                message_iter = self._transport(send_queue=send_queue)
+                try:
+                    wire = await _run_request_loop(
+                        message_iter,
+                        send_queue,
+                        self._abort_event,
+                        terminal_message_type="command_execution_result_message",
+                        result_cls=CommandExecutionResultMessageInterface,
+                        on_assistant_message=options.on_assistant_message,
+                        on_command_output=options.on_command_output,
+                        on_artifact_upload_request=options.on_artifact_upload_request,
+                        idle_timeout=options.idle_timeout,
+                        assistant_callback_timeout=options.assistant_callback_timeout,
+                        artifact_upload_callback_timeout=options.artifact_upload_callback_timeout,
+                        cancelled_message="Command execution was cancelled",
+                        logger=logger,
+                    )
+                finally:
+                    await message_iter.aclose()
         except TimeoutError:
             logger.exception(
                 "Command execution timed out source_id=%s timeout=%s",
