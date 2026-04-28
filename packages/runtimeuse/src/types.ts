@@ -56,8 +56,8 @@ interface ResultMessage {
   message_type: "result_message";
   metadata?: Record<string, unknown>;
   data:
-    | { type: "text"; text: string }
-    | { type: "structured_output"; structured_output: Record<string, unknown> };
+  | { type: "text"; text: string }
+  | { type: "structured_output"; structured_output: Record<string, unknown> };
   [key: string]: unknown;
 }
 
@@ -71,6 +71,12 @@ interface CommandOutputMessage {
   stream: "stdout" | "stderr";
   text: string;
   command: string;
+}
+
+interface HeartbeatMessage {
+  message_type: "heartbeat_message";
+  phase: string;
+  elapsed_ms: number;
 }
 
 interface ArtifactUploadRequestMessage {
@@ -101,6 +107,7 @@ type OutgoingMessage =
   | ResultMessage
   | AssistantMessage
   | CommandOutputMessage
+  | HeartbeatMessage
   | ArtifactUploadRequestMessage
   | ErrorMessage
   | CommandExecutionResultMessage
@@ -125,6 +132,7 @@ export type {
   ResultMessage,
   AssistantMessage,
   CommandOutputMessage,
+  HeartbeatMessage,
   ArtifactUploadRequestMessage,
   ArtifactUploadResponseMessage,
   ErrorMessage,

@@ -44,8 +44,9 @@ function spawnCli(
   args: string[],
   env?: Record<string, string>,
 ): ChildProcess {
+  const { VITEST: _vitest, ...baseEnv } = process.env;
   return spawn("node", [CLI_JS, ...args], {
-    env: { ...process.env, NODE_ENV: "test", ...env },
+    env: { ...baseEnv, NODE_ENV: "test", ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
 }
@@ -83,13 +84,24 @@ function sendJson(ws: WebSocket, data: unknown): void {
   ws.send(JSON.stringify(data));
 }
 
-function collectWsMessages(ws: WebSocket): Promise<Record<string, unknown>[]> {
-  const messages: Record<string, unknown>[] = [];
-  return new Promise((resolve) => {
+function waitForWsMessage(
+  ws: WebSocket,
+  predicate: (message: Record<string, unknown>) => boolean,
+  timeoutMs = STARTUP_TIMEOUT_MS,
+): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Timed out waiting for WebSocket message`)),
+      timeoutMs,
+    );
     ws.on("message", (raw: Buffer) => {
-      messages.push(JSON.parse(raw.toString()));
+      const message = JSON.parse(raw.toString()) as Record<string, unknown>;
+      if (predicate(message)) {
+        clearTimeout(timer);
+        resolve(message);
+      }
     });
-    ws.on("close", () => resolve(messages));
+    ws.on("error", reject);
   });
 }
 
@@ -145,7 +157,10 @@ describe("CLI", () => {
     await waitForPort(port);
 
     const ws = await connectWs(port);
-    const messagesPromise = collectWsMessages(ws);
+    const resultPromise = waitForWsMessage(
+      ws,
+      (m) => m.message_type === "result_message",
+    );
 
     sendJson(ws, {
       message_type: "invocation_message",
@@ -155,13 +170,9 @@ describe("CLI", () => {
       model: "echo",
     });
 
-    const messages = await messagesPromise;
-    const result = messages.find(
-      (m) => m.message_type === "result_message",
-    );
-
-    expect(result).toBeDefined();
-    expect(result!.data).toEqual({ type: "text", text: "hello from cli test" });
+    const result = await resultPromise;
+    expect(result.data).toEqual({ type: "text", text: "hello from cli test" });
+    sendJson(ws, { message_type: "end_session_message" });
   });
 
   it("unknown --agent exits with error", async () => {

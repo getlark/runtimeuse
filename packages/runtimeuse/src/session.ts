@@ -25,6 +25,7 @@ export interface SessionConfig {
   uploadTimeoutMs?: number;
   artifactWaitMs?: number;
   postInvocationDelayMs?: number;
+  heartbeatIntervalMs?: number;
   logger?: Logger;
 }
 
@@ -158,8 +159,20 @@ export class WebSocketSession {
     });
 
     let terminal: OutgoingMessage;
+    const startedAt = Date.now();
+    const heartbeatIntervalMs = this.config.heartbeatIntervalMs ?? 15_000;
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
     try {
       this.requestInFlight = true;
+      if (heartbeatIntervalMs > 0) {
+        heartbeatTimer = setInterval(() => {
+          this.send({
+            message_type: "heartbeat_message",
+            phase: "request_in_flight",
+            elapsed_ms: Date.now() - startedAt,
+          });
+        }, heartbeatIntervalMs);
+      }
       try {
         terminal = await runFn(runner);
         if (abortController.signal.aborted) {
@@ -199,6 +212,9 @@ export class WebSocketSession {
       // written right before the ws closed.
       this.send(terminal);
     } finally {
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+      }
       this.currentAbortController = null;
       this.requestInFlight = false;
     }

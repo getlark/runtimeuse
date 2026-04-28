@@ -11,7 +11,7 @@ from src.runtimeuse_client import (
     CommandExecutionResult,
     CommandInterface,
     TextResult,
-    AssistantMessageInterface,
+    CommandOutputMessageInterface,
 )
 from test.sandbox_factories.e2b import create_e2b_runtimeuse
 
@@ -40,9 +40,9 @@ class TestE2BSandbox:
     async def test_execute_commands(self):
         sandbox, ws_url = create_e2b_runtimeuse(agent="openai")
         try:
-            received: list[AssistantMessageInterface] = []
+            received: list[CommandOutputMessageInterface] = []
 
-            async def on_msg(msg: AssistantMessageInterface):
+            async def on_output(msg: CommandOutputMessageInterface):
                 received.append(msg)
 
             client = RuntimeUseClient(ws_url=ws_url)
@@ -52,7 +52,7 @@ class TestE2BSandbox:
                     CommandInterface(command="node --version"),
                 ],
                 options=ExecuteCommandsOptions(
-                    on_assistant_message=on_msg,
+                    on_command_output=on_output,
                     timeout=30,
                 ),
             )
@@ -65,7 +65,7 @@ class TestE2BSandbox:
             assert result.results[1].exit_code == 0
             assert result.results[1].stdout is not None
 
-            all_text = [block for msg in received for block in msg.text_blocks]
+            all_text = [msg.text for msg in received]
             assert any("hello-from-e2b" in t for t in all_text)
         finally:
             sandbox.kill()

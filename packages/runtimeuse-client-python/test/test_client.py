@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any, cast
 from unittest.mock import AsyncMock
 import pytest
 
@@ -394,6 +395,206 @@ class TestTimeout:
                 prompt=DEFAULT_PROMPT,
                 options=make_query_options(timeout=0.05),
             )
+
+    @pytest.mark.asyncio
+    async def test_idle_timeout_raises_with_diagnostics(self, make_query_options):
+        async def idle_transport(
+            send_queue: asyncio.Queue[dict],
+        ):
+            yield {"message_type": "assistant_message", "text_blocks": ["working"]}
+            await asyncio.sleep(10)
+            yield TEXT_RESULT_MSG  # pragma: no cover
+
+        client = RuntimeUseClient(transport=idle_transport)
+
+        with pytest.raises(
+            AgentRuntimeError, match="No message received from agent runtime"
+        ) as exc_info:
+            await client.query(
+                prompt=DEFAULT_PROMPT,
+                options=make_query_options(idle_timeout=0.05, timeout=1),
+            )
+
+        assert exc_info.value.metadata == {
+            "timeout_type": "idle_timeout",
+            "idle_timeout": 0.05,
+            "last_message_type": "assistant_message",
+            "message_count": 1,
+            "phase": "waiting_for_message",
+        }
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_message_allows_query_to_continue(
+        self, fake_transport, make_query_options
+    ):
+        transport, client = fake_transport(
+            [
+                {
+                    "message_type": "heartbeat_message",
+                    "phase": "request_in_flight",
+                    "elapsed_ms": 123,
+                },
+                TEXT_RESULT_MSG,
+            ]
+        )
+        on_assistant = AsyncMock()
+
+        result = await client.query(
+            prompt=DEFAULT_PROMPT,
+            options=make_query_options(on_assistant_message=on_assistant),
+        )
+
+        on_assistant.assert_not_awaited()
+        assert isinstance(result.data, TextResult)
+
+    @pytest.mark.asyncio
+    async def test_assistant_callback_timeout_raises(self, fake_transport, make_query_options):
+        transport, client = fake_transport(
+            [{"message_type": "assistant_message", "text_blocks": ["slow"]}]
+        )
+
+        async def slow_assistant(_message):
+            await asyncio.sleep(10)
+
+        with pytest.raises(
+            AgentRuntimeError, match="on_assistant_message callback timed out"
+        ) as exc_info:
+            await client.query(
+                prompt=DEFAULT_PROMPT,
+                options=make_query_options(
+                    on_assistant_message=slow_assistant,
+                    assistant_callback_timeout=0.05,
+                    timeout=1,
+                ),
+            )
+
+        metadata = exc_info.value.metadata
+        assert metadata is not None
+        assert metadata["timeout_type"] == "assistant_callback_timeout"
+        assert metadata["timeout"] == 0.05
+
+    @pytest.mark.asyncio
+    async def test_artifact_upload_callback_timeout_raises(
+        self, fake_transport, make_query_options
+    ):
+        upload_request = {
+            "message_type": "artifact_upload_request_message",
+            "filename": "slow.txt",
+            "filepath": "/tmp/slow.txt",
+        }
+        transport, client = fake_transport([upload_request])
+
+        async def slow_artifact(_message):
+            await asyncio.sleep(10)
+
+        with pytest.raises(
+            AgentRuntimeError, match="on_artifact_upload_request callback timed out"
+        ) as exc_info:
+            await client.query(
+                prompt=DEFAULT_PROMPT,
+                options=make_query_options(
+                    artifacts_dir="/tmp/artifacts",
+                    on_artifact_upload_request=slow_artifact,
+                    artifact_upload_callback_timeout=0.05,
+                    timeout=1,
+                ),
+            )
+
+        assert exc_info.value.metadata == {
+            "timeout_type": "artifact_upload_callback_timeout",
+            "timeout": 0.05,
+            "filename": "slow.txt",
+            "filepath": "/tmp/slow.txt",
+        }
+
+
+class _ClosableOneShotTransport:
+    def __init__(self, message: dict):
+        self.message = message
+        self.closed = False
+
+    async def __call__(self, send_queue: asyncio.Queue[dict]):
+        try:
+            yield self.message
+            await asyncio.sleep(10)  # pragma: no cover
+        finally:
+            self.closed = True
+
+
+class TestOneShotTransportCleanup:
+    @pytest.mark.asyncio
+    async def test_query_closes_transport_iterator_after_terminal(
+        self, make_query_options
+    ):
+        transport = _ClosableOneShotTransport(TEXT_RESULT_MSG)
+        client = RuntimeUseClient(transport=transport)
+
+        await client.query(prompt=DEFAULT_PROMPT, options=make_query_options())
+
+        assert transport.closed is True
+
+    @pytest.mark.asyncio
+    async def test_execute_commands_closes_transport_iterator_after_terminal(
+        self, make_execute_commands_options
+    ):
+        result_msg = {
+            "message_type": "command_execution_result_message",
+            "results": [{"command": "echo hi", "exit_code": 0, "stdout": "hi\n"}],
+        }
+        transport = _ClosableOneShotTransport(result_msg)
+        client = RuntimeUseClient(transport=transport)
+
+        await client.execute_commands(
+            commands=[CommandInterface(command="echo hi")],
+            options=make_execute_commands_options(),
+        )
+
+        assert transport.closed is True
+
+
+class TestWebSocketTransportCleanup:
+    @pytest.mark.asyncio
+    async def test_call_closes_connected_request_iterator(self, monkeypatch):
+        import src.runtimeuse_client.transports.websocket_transport as ws_transport
+
+        request_closed = False
+
+        class FakeConnectContext:
+            async def __aenter__(self):
+                return object()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+        class FakeConnectedWebSocketTransport:
+            def __init__(self, ws):
+                self.ws = ws
+
+            async def request(self, send_queue: asyncio.Queue[dict]):
+                nonlocal request_closed
+                try:
+                    yield TEXT_RESULT_MSG
+                    await asyncio.sleep(10)  # pragma: no cover
+                finally:
+                    request_closed = True
+
+        monkeypatch.setattr(
+            ws_transport.websockets,
+            "connect",
+            lambda *args, **kwargs: FakeConnectContext(),
+        )
+        monkeypatch.setattr(
+            ws_transport,
+            "ConnectedWebSocketTransport",
+            FakeConnectedWebSocketTransport,
+        )
+
+        iterator = ws_transport.WebSocketTransport("ws://example.test")(asyncio.Queue())
+
+        assert await anext(iterator) == TEXT_RESULT_MSG
+        await iterator.aclose()
+
+        assert request_closed is True
 
 
 # ---------------------------------------------------------------------------
@@ -1111,7 +1312,7 @@ class TestStaleTerminalDraining:
         transport = _StaleBufferTransport(
             [filler, cancel_terminal, result_after]
         )
-        client = RuntimeUseClient(transport=transport)
+        client = RuntimeUseClient(transport=cast(Any, transport))
 
         async with client.session() as session:
             async def abort_on_first(_msg):
@@ -1128,4 +1329,5 @@ class TestStaleTerminalDraining:
                 prompt="two", options=make_query_options()
             )
 
+        assert isinstance(second.data, TextResult)
         assert second.data.text == "clean"
