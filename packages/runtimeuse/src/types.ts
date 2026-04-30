@@ -21,6 +21,13 @@ interface InvocationMessage {
   /** @deprecated Use `artifacts_dirs`. Accepted for backwards compatibility. */
   artifacts_dir?: string;
   artifacts_dirs?: string[];
+  /**
+   * Gitignore-format text applied as the ignore patterns for every directory
+   * in `artifacts_dirs` for this message. When set, takes precedence over any
+   * `.artifactignore` file at the watched directory. The runtime never reads
+   * this from the filesystem — the consumer is responsible for sourcing it.
+   */
+  artifacts_ignore_content?: string;
   pre_agent_invocation_commands?: Command[];
   post_agent_invocation_commands?: Command[];
   pre_agent_downloadables?: RuntimeEnvironmentDownloadable[];
@@ -34,6 +41,13 @@ interface CommandExecutionMessage {
   /** @deprecated Use `artifacts_dirs`. Accepted for backwards compatibility. */
   artifacts_dir?: string;
   artifacts_dirs?: string[];
+  /**
+   * Gitignore-format text applied as the ignore patterns for every directory
+   * in `artifacts_dirs` for this message. When set, takes precedence over any
+   * `.artifactignore` file at the watched directory. The runtime never reads
+   * this from the filesystem — the consumer is responsible for sourcing it.
+   */
+  artifacts_ignore_content?: string;
   pre_execution_downloadables?: RuntimeEnvironmentDownloadable[];
 }
 

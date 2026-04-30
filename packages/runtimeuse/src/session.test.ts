@@ -517,8 +517,14 @@ describe("WebSocketSession", () => {
       await waitForTerminal(ws, 2);
       await endSession(ws, done);
 
-      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/first");
-      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/second");
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith(
+        "/tmp/first",
+        expect.any(Object),
+      );
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith(
+        "/tmp/second",
+        expect.any(Object),
+      );
     });
 
     it("registers every directory when a request lists multiple artifacts_dirs", async () => {
@@ -532,9 +538,18 @@ describe("WebSocketSession", () => {
       await waitForTerminal(ws);
       await endSession(ws, done);
 
-      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/a");
-      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/b");
-      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/c");
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith(
+        "/tmp/a",
+        expect.any(Object),
+      );
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith(
+        "/tmp/b",
+        expect.any(Object),
+      );
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith(
+        "/tmp/c",
+        expect.any(Object),
+      );
     });
 
     it("still accepts the deprecated singular artifacts_dir field", async () => {
@@ -548,6 +563,7 @@ describe("WebSocketSession", () => {
 
       expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith(
         "/tmp/legacy",
+        expect.any(Object),
       );
     });
 
@@ -567,7 +583,69 @@ describe("WebSocketSession", () => {
         (c) => c[0] === "/tmp/shared",
       );
       expect(sharedCalls).toHaveLength(1);
-      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/extra");
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith(
+        "/tmp/extra",
+        expect.any(Object),
+      );
+    });
+
+    it("forwards artifacts_ignore_content to every addDirectory call", async () => {
+      const { session, ws } = createSession();
+      const done = session.run();
+
+      sendMessage(ws, {
+        ...INVOCATION_MSG,
+        artifacts_dirs: ["/tmp/a", "/tmp/b"],
+        artifacts_ignore_content: "*.log\nnode_modules/\n",
+      });
+      await waitForTerminal(ws);
+      await endSession(ws, done);
+
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/a", {
+        ignoreContent: "*.log\nnode_modules/\n",
+      });
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/b", {
+        ignoreContent: "*.log\nnode_modules/\n",
+      });
+    });
+
+    it("passes empty options when artifacts_ignore_content is omitted", async () => {
+      const { session, ws } = createSession();
+      const done = session.run();
+
+      sendMessage(ws, {
+        ...INVOCATION_MSG,
+        artifacts_dirs: ["/tmp/only"],
+      });
+      await waitForTerminal(ws);
+      await endSession(ws, done);
+
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith(
+        "/tmp/only",
+        {},
+      );
+    });
+
+    it("forwards artifacts_ignore_content from a command_execution_message", async () => {
+      mockCommandExecute.mockResolvedValueOnce({ exitCode: 0 });
+      const { session, ws } = createSession();
+      const done = session.run();
+
+      sendMessage(ws, {
+        message_type: "command_execution_message",
+        source_id: "cmd-test",
+        secrets_to_redact: [],
+        commands: [{ command: "echo hi" }],
+        artifacts_dirs: ["/tmp/cmd-artifacts"],
+        artifacts_ignore_content: "*.tmp\n",
+      });
+      await waitForTerminal(ws);
+      await endSession(ws, done);
+
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith(
+        "/tmp/cmd-artifacts",
+        { ignoreContent: "*.tmp\n" },
+      );
     });
   });
 

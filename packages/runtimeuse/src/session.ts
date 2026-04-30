@@ -1,7 +1,10 @@
 import { WebSocket } from "ws";
 
 import type { AgentHandler } from "./agent-handler.js";
-import { ArtifactManager } from "./artifact-manager.js";
+import {
+  ArtifactManager,
+  type AddDirectoryOptions,
+} from "./artifact-manager.js";
 import type { UploadTracker } from "./upload-tracker.js";
 import type {
   InvocationMessage,
@@ -149,11 +152,11 @@ export class WebSocketSession {
     // Watched directories accumulate across requests on a persistent session:
     // chokidar's awaitWriteFinish + async upload may flush files written near
     // the end of one request well into the next, and we want to capture those.
-    const artifactDirs = this.collectArtifactDirs(message);
-    if (artifactDirs.length > 0) {
+    const artifactDirSpecs = this.collectArtifactDirSpecs(message);
+    if (artifactDirSpecs.length > 0) {
       this.ensureArtifactManager();
-      for (const dir of artifactDirs) {
-        this.artifactManager!.addDirectory(dir);
+      for (const spec of artifactDirSpecs) {
+        this.artifactManager!.addDirectory(spec.dir, spec.options);
       }
     }
 
@@ -246,9 +249,9 @@ export class WebSocketSession {
     return this.drainPromise;
   }
 
-  private collectArtifactDirs(
+  private collectArtifactDirSpecs(
     message: InvocationMessage | CommandExecutionMessage,
-  ): string[] {
+  ): Array<{ dir: string; options: AddDirectoryOptions }> {
     const dirs: string[] = [];
     if (message.artifacts_dir) {
       this.logger.warn(
@@ -259,7 +262,10 @@ export class WebSocketSession {
     if (message.artifacts_dirs) {
       dirs.push(...message.artifacts_dirs);
     }
-    return [...new Set(dirs)];
+    const ignoreContent = message.artifacts_ignore_content;
+    const options: AddDirectoryOptions =
+      ignoreContent !== undefined ? { ignoreContent } : {};
+    return [...new Set(dirs)].map((dir) => ({ dir, options }));
   }
 
   private ensureArtifactManager(): void {
