@@ -31,14 +31,26 @@ import fs from "fs";
 import chokidar from "chokidar";
 import {
   ArtifactManager,
+  type AddDirectoryOptions,
   type ArtifactManagerConfig,
 } from "./artifact-manager.js";
 import { UploadTracker } from "./upload-tracker.js";
 import { uploadFile } from "./storage.js";
+import type { Logger } from "./logger.js";
+
+function makeLogger(): Logger {
+  return {
+    log: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  };
+}
 
 function createManager(
   overrides: Partial<ArtifactManagerConfig> = {},
   artifactsDir: string | null = "/tmp/artifacts",
+  addOptions: AddDirectoryOptions = {},
 ) {
   const send = vi.fn();
   const uploadTracker = new UploadTracker();
@@ -47,9 +59,11 @@ function createManager(
     send,
     ...overrides,
   };
+  const logger = makeLogger();
   const manager = new ArtifactManager(config);
-  if (artifactsDir) manager.addDirectory(artifactsDir);
-  return { manager, send, uploadTracker };
+  manager.setLogger(logger);
+  if (artifactsDir) manager.addDirectory(artifactsDir, addOptions);
+  return { manager, send, uploadTracker, logger };
 }
 
 function getHandler(event: string) {
@@ -318,6 +332,101 @@ describe("ArtifactManager", () => {
     it("does not upload the .artifactignore file itself", () => {
       const { send } = createManager();
       getHandler("add")("/tmp/artifacts/.artifactignore", fileStats());
+      expect(send).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("ignoreContent option", () => {
+    it("applies inline ignore patterns from ignoreContent", () => {
+      const { send } = createManager({}, "/tmp/artifacts", {
+        ignoreContent: "*.log\n",
+      });
+      getHandler("add")("/tmp/artifacts/debug.log", fileStats());
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it("does not read .artifactignore from disk when ignoreContent is provided", () => {
+      createManager({}, "/tmp/artifacts", { ignoreContent: "*.log\n" });
+      expect(fs.existsSync).not.toHaveBeenCalled();
+      expect(fs.readFileSync).not.toHaveBeenCalled();
+    });
+
+    it("ignoreContent wins over an inline blob even with a .artifactignore on disk", () => {
+      const { send } = createManager({}, "/tmp/artifacts", {
+        ignoreContent: "*.log\n",
+      });
+
+      // The inline blob declares only *.log, so a file matching the on-disk
+      // .artifactignore (*.png) should still be uploaded.
+      getHandler("add")("/tmp/artifacts/screenshot.png", fileStats());
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({ filename: "screenshot.png" }),
+      );
+
+      send.mockClear();
+      // *.log SHOULD be ignored per the inline blob.
+      getHandler("add")("/tmp/artifacts/debug.log", fileStats());
+      expect(send).not.toHaveBeenCalled();
+
+      // The inline blob path must not touch the filesystem at all.
+      expect(fs.existsSync).not.toHaveBeenCalled();
+      expect(fs.readFileSync).not.toHaveBeenCalled();
+    });
+
+    it("file event for .artifactignore does not overwrite the inline blob", () => {
+      const { send } = createManager({}, "/tmp/artifacts", {
+        ignoreContent: "*.log\n",
+      });
+
+      // A .artifactignore file event would, without the pin, replace the
+      // patterns with whatever the file contains. The pin should short-circuit
+      // before the runtime even checks the filesystem.
+      getHandler("change")(
+        "/tmp/artifacts/.artifactignore",
+        fileStats(),
+      );
+
+      // The inline blob is still in effect, so *.log is still ignored.
+      getHandler("add")("/tmp/artifacts/debug.log", fileStats());
+      expect(send).not.toHaveBeenCalled();
+      expect(fs.readFileSync).not.toHaveBeenCalled();
+    });
+
+    it("warns when neither ignoreContent nor a .artifactignore file is provided", () => {
+      const { logger } = createManager();
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "No artifact ignore patterns provided for /tmp/artifacts",
+        ),
+      );
+    });
+
+    it("does not warn when an .artifactignore file is found", () => {
+      vi.mocked(fs.existsSync).mockReturnValueOnce(true);
+      vi.mocked(fs.readFileSync).mockReturnValueOnce("*.log\n");
+      const { logger } = createManager();
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it("does not warn when ignoreContent is provided", () => {
+      const { logger } = createManager({}, "/tmp/artifacts", {
+        ignoreContent: "*.log\n",
+      });
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it("treats ignoreContent: null the same as omitted", () => {
+      // The session forwards `message.artifacts_ignore_content` straight into
+      // options, and Python clients serialize unset optional fields as JSON
+      // null. The manager must not pass that null into the ignore parser.
+      vi.mocked(fs.existsSync).mockReturnValueOnce(true);
+      vi.mocked(fs.readFileSync).mockReturnValueOnce("*.log\n");
+
+      const { send } = createManager({}, "/tmp/artifacts", {
+        ignoreContent: null as unknown as string | undefined,
+      });
+      // Falls back to the on-disk .artifactignore loaded above.
+      getHandler("add")("/tmp/artifacts/debug.log", fileStats());
       expect(send).not.toHaveBeenCalled();
     });
   });

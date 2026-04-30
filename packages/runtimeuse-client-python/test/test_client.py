@@ -360,6 +360,59 @@ class TestArtifactUpload:
             options=query_options,
         )
 
+    @pytest.mark.asyncio
+    async def test_artifacts_ignore_content_forwarded_to_invocation(
+        self, fake_transport, make_query_options
+    ):
+        transport, client = fake_transport([TEXT_RESULT_MSG])
+
+        async def _on_artifact(_req):
+            return ArtifactUploadResult(
+                presigned_url="https://s3.example.com/x", content_type="text/plain"
+            )
+
+        await client.query(
+            prompt=DEFAULT_PROMPT,
+            options=make_query_options(
+                artifacts_dirs=["/tmp/artifacts"],
+                artifacts_ignore_content="*.log\nnode_modules/\n",
+                on_artifact_upload_request=_on_artifact,
+            ),
+        )
+
+        invocation_msgs = [
+            m for m in transport.sent if m.get("message_type") == "invocation_message"
+        ]
+        assert len(invocation_msgs) == 1
+        assert (
+            invocation_msgs[0]["artifacts_ignore_content"]
+            == "*.log\nnode_modules/\n"
+        )
+
+    @pytest.mark.asyncio
+    async def test_artifacts_ignore_content_defaults_to_none(
+        self, fake_transport, make_query_options
+    ):
+        transport, client = fake_transport([TEXT_RESULT_MSG])
+
+        async def _on_artifact(_req):
+            return ArtifactUploadResult(
+                presigned_url="https://s3.example.com/x", content_type="text/plain"
+            )
+
+        await client.query(
+            prompt=DEFAULT_PROMPT,
+            options=make_query_options(
+                artifacts_dirs=["/tmp/artifacts"],
+                on_artifact_upload_request=_on_artifact,
+            ),
+        )
+
+        invocation_msgs = [
+            m for m in transport.sent if m.get("message_type") == "invocation_message"
+        ]
+        assert invocation_msgs[0]["artifacts_ignore_content"] is None
+
 
 # ---------------------------------------------------------------------------
 # Cancellation
@@ -1084,6 +1137,34 @@ class TestExecuteCommands:
         assert len(cmd_msgs) == 1
         assert cmd_msgs[0]["artifacts_dirs"] == ["/tmp/one", "/tmp/two"]
         assert "artifacts_dir" not in cmd_msgs[0]
+
+    @pytest.mark.asyncio
+    async def test_artifacts_ignore_content_forwarded_to_command_execution(
+        self, fake_transport, make_execute_commands_options
+    ):
+        transport, client = fake_transport([COMMAND_RESULT_MSG])
+
+        async def _on_artifact(_req):
+            return ArtifactUploadResult(
+                presigned_url="https://s3.example.com/x", content_type="text/plain"
+            )
+
+        await client.execute_commands(
+            commands=[CommandInterface(command="echo hello")],
+            options=make_execute_commands_options(
+                artifacts_dirs=["/tmp/artifacts"],
+                artifacts_ignore_content="*.tmp\n",
+                on_artifact_upload_request=_on_artifact,
+            ),
+        )
+
+        cmd_msgs = [
+            m
+            for m in transport.sent
+            if m.get("message_type") == "command_execution_message"
+        ]
+        assert len(cmd_msgs) == 1
+        assert cmd_msgs[0]["artifacts_ignore_content"] == "*.tmp\n"
 
     @pytest.mark.asyncio
     async def test_command_env_forwarded(

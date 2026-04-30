@@ -40,6 +40,7 @@ class InvocationMessage(BaseModel):
     output_format_json_schema_str: str | None = None
     secrets_to_redact: list[str] = Field(default_factory=list)
     artifacts_dirs: list[str] | None = None
+    artifacts_ignore_content: str | None = None
     pre_agent_invocation_commands: list[CommandInterface] | None = None
     post_agent_invocation_commands: list[CommandInterface] | None = None
     model: str
@@ -140,6 +141,7 @@ class CommandExecutionMessage(BaseModel):
     secrets_to_redact: list[str] = Field(default_factory=list)
     commands: list[CommandInterface]
     artifacts_dirs: list[str] | None = None
+    artifacts_ignore_content: str | None = None
     pre_execution_downloadables: (
         list[RuntimeEnvironmentDownloadableInterface] | None
     ) = None
@@ -213,6 +215,12 @@ class QueryOptions:
     #: Each directory is watched independently and may carry its own
     #: ``.artifactignore``. An empty list is treated the same as ``None``.
     artifacts_dirs: list[str] | None = None
+    #: Gitignore-format text applied as the ignore patterns for every directory
+    #: in ``artifacts_dirs``. When set, takes precedence over any
+    #: ``.artifactignore`` file present at the watched directory in the runtime
+    #: environment. Use this when the watched directory may not exist on disk
+    #: at the time the runtime starts watching it.
+    artifacts_ignore_content: str | None = None
     #: Commands to run in the runtime environment before the agent starts.
     pre_agent_invocation_commands: list[CommandInterface] | None = None
     #: Commands to run in the runtime environment after the agent finishes.
@@ -255,6 +263,12 @@ class ExecuteCommandsOptions:
     #: Each directory is watched independently and may carry its own
     #: ``.artifactignore``. An empty list is treated the same as ``None``.
     artifacts_dirs: list[str] | None = None
+    #: Gitignore-format text applied as the ignore patterns for every directory
+    #: in ``artifacts_dirs``. When set, takes precedence over any
+    #: ``.artifactignore`` file present at the watched directory in the runtime
+    #: environment. Use this when the watched directory may not exist on disk
+    #: at the time the runtime starts watching it.
+    artifacts_ignore_content: str | None = None
     #: Files to download into the runtime environment before commands run.
     pre_execution_downloadables: (
         list[RuntimeEnvironmentDownloadableInterface] | None

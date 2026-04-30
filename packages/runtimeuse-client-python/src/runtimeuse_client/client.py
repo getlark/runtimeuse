@@ -43,6 +43,7 @@ def _build_invocation(prompt: str, options: QueryOptions) -> InvocationMessage:
         agent_env=options.agent_env,
         secrets_to_redact=options.secrets_to_redact,
         artifacts_dirs=options.artifacts_dirs or None,
+        artifacts_ignore_content=options.artifacts_ignore_content,
         pre_agent_invocation_commands=options.pre_agent_invocation_commands,
         post_agent_invocation_commands=options.post_agent_invocation_commands,
         pre_agent_downloadables=options.pre_agent_downloadables,
@@ -58,6 +59,7 @@ def _build_command_execution(
         secrets_to_redact=options.secrets_to_redact,
         commands=commands,
         artifacts_dirs=options.artifacts_dirs or None,
+        artifacts_ignore_content=options.artifacts_ignore_content,
         pre_execution_downloadables=options.pre_execution_downloadables,
     )
 

@@ -16,13 +16,30 @@ export interface ArtifactManagerConfig {
   send: (message: ArtifactUploadRequestMessage) => void;
 }
 
+export interface AddDirectoryOptions {
+  /**
+   * Gitignore-format text used as the ignore patterns for this directory.
+   * When provided, takes precedence over any `.artifactignore` file at
+   * `<dir>/.artifactignore` and pins the source so subsequent on-disk file
+   * events do not overwrite the in-memory patterns.
+   */
+  ignoreContent?: string;
+}
+
+type IgnoreSource = "content" | "file" | "default";
+
+interface WatchedDir {
+  ig: Ignore;
+  source: IgnoreSource;
+}
+
 export class ArtifactManager {
   private readonly watcher: ReturnType<typeof chokidar.watch>;
   private readonly pendingRequests = new Map<
     string,
     { promise: Promise<void>; resolve: () => void }
   >();
-  private readonly watchedDirs = new Map<string, Ignore>();
+  private readonly watchedDirs = new Map<string, WatchedDir>();
   private readonly uploadTracker: UploadTracker;
   private readonly send: (message: ArtifactUploadRequestMessage) => void;
   private logger: Logger = defaultLogger;
@@ -46,22 +63,42 @@ export class ArtifactManager {
    * requests in the same session — repeat calls for the same directory are
    * no-ops. The watcher stays alive until {@link stopWatching} is called at
    * session close.
+   *
+   * Ignore-pattern resolution order:
+   *   1. `options.ignoreContent` if provided (pinned — file events do not
+   *      overwrite it).
+   *   2. `<dir>/.artifactignore` on disk if present.
+   *   3. {@link DEFAULT_ARTIFACT_IGNORE}, with a warning logged so the
+   *      fallback is visible.
    */
-  addDirectory(dir: string): void {
+  addDirectory(dir: string, options: AddDirectoryOptions = {}): void {
     if (this.watchedDirs.has(dir)) return;
 
     fs.mkdirSync(dir, { recursive: true });
 
     const ig = ignore();
-    const ignorePath = path.join(dir, ".artifactignore");
-    if (fs.existsSync(ignorePath)) {
-      ig.add(fs.readFileSync(ignorePath, "utf-8"));
-      this.logger.log(`Loaded .artifactignore from ${ignorePath}`);
+    let source: IgnoreSource;
+
+    if (options.ignoreContent != null) {
+      ig.add(options.ignoreContent);
+      this.logger.log(`Loaded ignore patterns from message for ${dir}`);
+      source = "content";
     } else {
-      ig.add(DEFAULT_ARTIFACT_IGNORE);
+      const ignorePath = path.join(dir, ".artifactignore");
+      if (fs.existsSync(ignorePath)) {
+        ig.add(fs.readFileSync(ignorePath, "utf-8"));
+        this.logger.log(`Loaded .artifactignore from ${ignorePath}`);
+        source = "file";
+      } else {
+        ig.add(DEFAULT_ARTIFACT_IGNORE);
+        this.logger.warn(
+          `No artifact ignore patterns provided for ${dir}; using built-in default`,
+        );
+        source = "default";
+      }
     }
 
-    this.watchedDirs.set(dir, ig);
+    this.watchedDirs.set(dir, { ig, source });
     this.watcher.add(dir);
   }
 
@@ -154,9 +191,9 @@ export class ArtifactManager {
       return;
     }
 
-    const ig = this.watchedDirs.get(owningDir);
+    const watched = this.watchedDirs.get(owningDir);
     const relativePath = path.relative(owningDir, filePath);
-    if (ig && ig.ignores(relativePath)) {
+    if (watched && watched.ig.ignores(relativePath)) {
       if (this.loggingLevel === "debug") {
         this.logger.debug(`Skipping ignored artifact: ${relativePath}`);
       }
@@ -167,15 +204,21 @@ export class ArtifactManager {
   }
 
   private reloadIgnorePatterns(dir: string): void {
+    const existing = this.watchedDirs.get(dir);
+    // A message-supplied ignore blob is the authoritative source for that
+    // directory; on-disk file events must not silently override it.
+    if (existing?.source === "content") return;
+
     const ig = ignore();
     const ignorePath = path.join(dir, ".artifactignore");
     if (fs.existsSync(ignorePath)) {
       ig.add(fs.readFileSync(ignorePath, "utf-8"));
       this.logger.log(`Reloaded .artifactignore from ${ignorePath}`);
+      this.watchedDirs.set(dir, { ig, source: "file" });
     } else {
       ig.add(DEFAULT_ARTIFACT_IGNORE);
+      this.watchedDirs.set(dir, { ig, source: "default" });
     }
-    this.watchedDirs.set(dir, ig);
   }
 
   private requestUpload(filePath: string): void {
