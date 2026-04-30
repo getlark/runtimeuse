@@ -79,7 +79,7 @@ export class ArtifactManager {
     const ig = ignore();
     let source: IgnoreSource;
 
-    if (options.ignoreContent !== undefined) {
+    if (options.ignoreContent != null) {
       ig.add(options.ignoreContent);
       this.logger.log(`Loaded ignore patterns from message for ${dir}`);
       source = "content";

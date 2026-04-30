@@ -262,9 +262,12 @@ export class WebSocketSession {
     if (message.artifacts_dirs) {
       dirs.push(...message.artifacts_dirs);
     }
+    // Treat both `undefined` and `null` as "not provided". Other-language
+    // clients (e.g. Python) may serialize an unset optional field as JSON
+    // null rather than omitting it.
     const ignoreContent = message.artifacts_ignore_content;
     const options: AddDirectoryOptions =
-      ignoreContent !== undefined ? { ignoreContent } : {};
+      ignoreContent != null ? { ignoreContent } : {};
     return [...new Set(dirs)].map((dir) => ({ dir, options }));
   }
 

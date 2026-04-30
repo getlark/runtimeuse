@@ -626,6 +626,27 @@ describe("WebSocketSession", () => {
       );
     });
 
+    it("treats artifacts_ignore_content: null as omitted (cross-language wire format)", async () => {
+      // Other-language clients (e.g. Python's pydantic .model_dump) serialize
+      // an unset Optional field as JSON null rather than omitting it. The
+      // runtime must accept that without crashing the ignore parser.
+      const { session, ws } = createSession();
+      const done = session.run();
+
+      sendMessage(ws, {
+        ...INVOCATION_MSG,
+        artifacts_dirs: ["/tmp/with-null"],
+        artifacts_ignore_content: null,
+      });
+      await waitForTerminal(ws);
+      await endSession(ws, done);
+
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith(
+        "/tmp/with-null",
+        {},
+      );
+    });
+
     it("forwards artifacts_ignore_content from a command_execution_message", async () => {
       mockCommandExecute.mockResolvedValueOnce({ exitCode: 0 });
       const { session, ws } = createSession();

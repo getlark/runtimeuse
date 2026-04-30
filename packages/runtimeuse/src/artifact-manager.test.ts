@@ -414,5 +414,20 @@ describe("ArtifactManager", () => {
       });
       expect(logger.warn).not.toHaveBeenCalled();
     });
+
+    it("treats ignoreContent: null the same as omitted", () => {
+      // The session forwards `message.artifacts_ignore_content` straight into
+      // options, and Python clients serialize unset optional fields as JSON
+      // null. The manager must not pass that null into the ignore parser.
+      vi.mocked(fs.existsSync).mockReturnValueOnce(true);
+      vi.mocked(fs.readFileSync).mockReturnValueOnce("*.log\n");
+
+      const { send } = createManager({}, "/tmp/artifacts", {
+        ignoreContent: null as unknown as string | undefined,
+      });
+      // Falls back to the on-disk .artifactignore loaded above.
+      getHandler("add")("/tmp/artifacts/debug.log", fileStats());
+      expect(send).not.toHaveBeenCalled();
+    });
   });
 });
