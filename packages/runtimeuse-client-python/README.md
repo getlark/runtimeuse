@@ -175,7 +175,7 @@ async def on_artifact(request: ArtifactUploadRequestMessageInterface) -> Artifac
     return ArtifactUploadResult(presigned_url=presigned_url, content_type=content_type)
 ```
 
-When using artifact uploads, set both `artifacts_dir` and `on_artifact_upload_request` in `QueryOptions`; the client validates that they are provided together.
+When using artifact uploads, set both `artifacts_dirs` (a list of sandbox directories to watch) and `on_artifact_upload_request` in `QueryOptions`; the client validates that they are provided together. Pass multiple paths to watch several directories within a single invocation.
 
 ### Cancellation
 

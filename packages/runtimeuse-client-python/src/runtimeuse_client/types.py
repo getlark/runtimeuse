@@ -39,7 +39,7 @@ class InvocationMessage(BaseModel):
     agent_env: dict[str, str] | None = None
     output_format_json_schema_str: str | None = None
     secrets_to_redact: list[str] = Field(default_factory=list)
-    artifacts_dir: str | None = None
+    artifacts_dirs: list[str] | None = None
     pre_agent_invocation_commands: list[CommandInterface] | None = None
     post_agent_invocation_commands: list[CommandInterface] | None = None
     model: str
@@ -139,7 +139,7 @@ class CommandExecutionMessage(BaseModel):
     source_id: str | None = None
     secrets_to_redact: list[str] = Field(default_factory=list)
     commands: list[CommandInterface]
-    artifacts_dir: str | None = None
+    artifacts_dirs: list[str] | None = None
     pre_execution_downloadables: (
         list[RuntimeEnvironmentDownloadableInterface] | None
     ) = None
@@ -176,6 +176,16 @@ OnArtifactUploadRequestCallback = Callable[
 ]
 
 
+def _validate_artifact_pairing(
+    artifacts_dirs: list[str] | None,
+    callback: OnArtifactUploadRequestCallback | None,
+) -> None:
+    if bool(artifacts_dirs) != (callback is not None):
+        raise ValueError(
+            "artifacts_dirs and on_artifact_upload_request must be specified together"
+        )
+
+
 @dataclass
 class QueryOptions:
     """Options for :meth:`RuntimeUseClient.query`.
@@ -199,8 +209,10 @@ class QueryOptions:
     agent_env: dict[str, str] | None = None
     #: Secret values to redact from agent logs and responses.
     secrets_to_redact: list[str] = field(default_factory=list)
-    #: Directory inside the runtime environment where artifacts are written.
-    artifacts_dir: str | None = None
+    #: Directories inside the runtime environment where artifacts are written.
+    #: Each directory is watched independently and may carry its own
+    #: ``.artifactignore``. An empty list is treated the same as ``None``.
+    artifacts_dirs: list[str] | None = None
     #: Commands to run in the runtime environment before the agent starts.
     pre_agent_invocation_commands: list[CommandInterface] | None = None
     #: Commands to run in the runtime environment after the agent finishes.
@@ -226,12 +238,9 @@ class QueryOptions:
     logger: logging.Logger | None = None
 
     def __post_init__(self) -> None:
-        has_dir = self.artifacts_dir is not None
-        has_cb = self.on_artifact_upload_request is not None
-        if has_dir != has_cb:
-            raise ValueError(
-                "artifacts_dir and on_artifact_upload_request must be specified together"
-            )
+        _validate_artifact_pairing(
+            self.artifacts_dirs, self.on_artifact_upload_request
+        )
 
 
 @dataclass
@@ -242,8 +251,10 @@ class ExecuteCommandsOptions:
     secrets_to_redact: list[str] = field(default_factory=list)
     #: Caller-defined identifier for tracing/logging purposes.
     source_id: str | None = None
-    #: Directory inside the runtime environment where artifacts are written.
-    artifacts_dir: str | None = None
+    #: Directories inside the runtime environment where artifacts are written.
+    #: Each directory is watched independently and may carry its own
+    #: ``.artifactignore``. An empty list is treated the same as ``None``.
+    artifacts_dirs: list[str] | None = None
     #: Files to download into the runtime environment before commands run.
     pre_execution_downloadables: (
         list[RuntimeEnvironmentDownloadableInterface] | None
@@ -266,9 +277,6 @@ class ExecuteCommandsOptions:
     logger: logging.Logger | None = None
 
     def __post_init__(self) -> None:
-        has_dir = self.artifacts_dir is not None
-        has_cb = self.on_artifact_upload_request is not None
-        if has_dir != has_cb:
-            raise ValueError(
-                "artifacts_dir and on_artifact_upload_request must be specified together"
-            )
+        _validate_artifact_pairing(
+            self.artifacts_dirs, self.on_artifact_upload_request
+        )
