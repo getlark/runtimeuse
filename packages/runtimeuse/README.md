@@ -189,7 +189,7 @@ Environment variables can be injected at two levels:
 
 ## Artifact Management
 
-Files written to the artifacts directory are automatically detected via `chokidar` file watching and uploaded through a presigned URL handshake with the client. The artifacts directory is specified per-invocation via the `artifacts_dir` field in the `InvocationMessage`.
+Files written to any of the artifact directories are automatically detected via `chokidar` file watching and uploaded through a presigned URL handshake with the client. The directories to watch are specified per-invocation via the `artifacts_dirs` field (a `string[]`) on the `InvocationMessage` or `CommandExecutionMessage`. The legacy singular `artifacts_dir` field is still accepted but deprecated.
 
 - The client provides the `content_type` for each artifact via the presigned URL response
 - `.artifactignore` files are respected (same syntax as `.gitignore`)

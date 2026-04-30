@@ -275,7 +275,7 @@ class TestArtifacts:
         result = await client.query(
             prompt=f"WRITE_FILE:{artifacts_dir}/test.txt test-content",
             options=make_query_options(
-                artifacts_dir=artifacts_dir,
+                artifacts_dirs=[artifacts_dir],
                 on_artifact_upload_request=on_artifact,
                 timeout=15,
             ),
@@ -325,7 +325,7 @@ class TestArtifactUploadIntegration:
         result = await client.query(
             prompt=f"WRITE_FILE:{artifacts_dir}/hello.txt some-content",
             options=make_query_options(
-                artifacts_dir=artifacts_dir,
+                artifacts_dirs=[artifacts_dir],
                 on_artifact_upload_request=on_artifact,
                 timeout=15,
             ),
@@ -334,6 +334,44 @@ class TestArtifactUploadIntegration:
         assert isinstance(result.data, TextResult)
         assert result.data.text == f"wrote {artifacts_dir}/hello.txt"
         assert uploads.get("hello.txt") == b"some-content"
+
+    async def test_multiple_artifacts_dirs_in_single_invocation(
+        self, client: RuntimeUseClient, make_query_options, http_server
+    ):
+        """A single invocation declares two artifact directories; files in
+        either should be picked up and uploaded."""
+        base_url, _files, uploads = http_server
+        dir_a = f"/tmp/test-art-multi-a-{uuid4()}"
+        dir_b = f"/tmp/test-art-multi-b-{uuid4()}"
+        os.makedirs(dir_a, exist_ok=True)
+        os.makedirs(dir_b, exist_ok=True)
+
+        async def on_artifact(
+            req: ArtifactUploadRequestMessageInterface,
+        ) -> ArtifactUploadResult:
+            return ArtifactUploadResult(
+                presigned_url=f"{base_url}/uploads/{req.filename}",
+                content_type="text/plain",
+            )
+
+        result = await client.query(
+            prompt=f"WRITE_FILE:{dir_b}/from-agent.txt agent-content",
+            options=make_query_options(
+                pre_agent_invocation_commands=[
+                    CommandInterface(
+                        command=f"printf 'pre-content' > {dir_a}/from-pre.txt"
+                    ),
+                ],
+                artifacts_dirs=[dir_a, dir_b],
+                on_artifact_upload_request=on_artifact,
+                timeout=20,
+            ),
+        )
+
+        assert isinstance(result.data, TextResult)
+        assert result.data.text == f"wrote {dir_b}/from-agent.txt"
+        assert uploads.get("from-pre.txt") == b"pre-content"
+        assert uploads.get("from-agent.txt") == b"agent-content"
 
     async def test_multiple_artifacts_uploaded(
         self, ws_url: str, make_query_options, http_server
@@ -351,7 +389,7 @@ class TestArtifactUploadIntegration:
             )
 
         opts = dict(
-            artifacts_dir=artifacts_dir,
+            artifacts_dirs=[artifacts_dir],
             on_artifact_upload_request=on_artifact,
             timeout=15,
         )
@@ -498,7 +536,7 @@ class TestFullInvocationLifecycle:
                 post_agent_invocation_commands=[
                     CommandInterface(command="echo lifecycle-done")
                 ],
-                artifacts_dir=artifacts_dir,
+                artifacts_dirs=[artifacts_dir],
                 on_artifact_upload_request=on_artifact,
                 on_command_output=on_output,
                 timeout=20,

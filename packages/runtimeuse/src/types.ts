@@ -18,7 +18,9 @@ interface InvocationMessage {
   secrets_to_redact: string[];
   output_format_json_schema_str?: string;
   model: string;
+  /** @deprecated Use `artifacts_dirs`. Accepted for backwards compatibility. */
   artifacts_dir?: string;
+  artifacts_dirs?: string[];
   pre_agent_invocation_commands?: Command[];
   post_agent_invocation_commands?: Command[];
   pre_agent_downloadables?: RuntimeEnvironmentDownloadable[];
@@ -29,7 +31,9 @@ interface CommandExecutionMessage {
   source_id?: string;
   secrets_to_redact: string[];
   commands: Command[];
+  /** @deprecated Use `artifacts_dirs`. Accepted for backwards compatibility. */
   artifacts_dir?: string;
+  artifacts_dirs?: string[];
   pre_execution_downloadables?: RuntimeEnvironmentDownloadable[];
 }
 

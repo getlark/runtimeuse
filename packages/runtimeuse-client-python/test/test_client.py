@@ -301,7 +301,7 @@ class TestArtifactUpload:
         await client.query(
             prompt=DEFAULT_PROMPT,
             options=make_query_options(
-                artifacts_dir="/tmp/artifacts",
+                artifacts_dirs=["/tmp/artifacts"],
                 on_artifact_upload_request=on_artifact,
             ),
         )
@@ -317,6 +317,32 @@ class TestArtifactUpload:
         assert resp["filepath"] == "/tmp/screenshot.png"
         assert resp["presigned_url"] == "https://s3.example.com/presigned"
         assert resp["content_type"] == "image/png"
+
+    @pytest.mark.asyncio
+    async def test_artifacts_dirs_forwarded_to_invocation(
+        self, fake_transport, make_query_options
+    ):
+        transport, client = fake_transport([TEXT_RESULT_MSG])
+
+        async def _on_artifact(_req):
+            return ArtifactUploadResult(
+                presigned_url="https://s3.example.com/x", content_type="text/plain"
+            )
+
+        await client.query(
+            prompt=DEFAULT_PROMPT,
+            options=make_query_options(
+                artifacts_dirs=["/tmp/one", "/tmp/two"],
+                on_artifact_upload_request=_on_artifact,
+            ),
+        )
+
+        invocation_msgs = [
+            m for m in transport.sent if m.get("message_type") == "invocation_message"
+        ]
+        assert len(invocation_msgs) == 1
+        assert invocation_msgs[0]["artifacts_dirs"] == ["/tmp/one", "/tmp/two"]
+        assert "artifacts_dir" not in invocation_msgs[0]
 
     @pytest.mark.asyncio
     async def test_artifact_upload_ignored_without_callback(
@@ -493,7 +519,7 @@ class TestTimeout:
             await client.query(
                 prompt=DEFAULT_PROMPT,
                 options=make_query_options(
-                    artifacts_dir="/tmp/artifacts",
+                    artifacts_dirs=["/tmp/artifacts"],
                     on_artifact_upload_request=slow_artifact,
                     artifact_upload_callback_timeout=0.05,
                     timeout=1,
@@ -773,9 +799,9 @@ class TestConstructor:
         transport, client = fake_transport([])
         assert client is not None
 
-    def test_artifacts_dir_requires_callback(self, make_query_options):
+    def test_artifacts_dirs_requires_callback(self, make_query_options):
         with pytest.raises(ValueError, match="must be specified together"):
-            make_query_options(artifacts_dir="/tmp/artifacts")
+            make_query_options(artifacts_dirs=["/tmp/artifacts"])
 
         async def _dummy_cb(req):
             return ArtifactUploadResult(
@@ -786,10 +812,30 @@ class TestConstructor:
             make_query_options(on_artifact_upload_request=_dummy_cb)
 
         opts = make_query_options(
-            artifacts_dir="/tmp/artifacts", on_artifact_upload_request=_dummy_cb
+            artifacts_dirs=["/tmp/artifacts"], on_artifact_upload_request=_dummy_cb
         )
-        assert opts.artifacts_dir == "/tmp/artifacts"
+        assert opts.artifacts_dirs == ["/tmp/artifacts"]
         assert opts.on_artifact_upload_request is _dummy_cb
+
+    def test_artifacts_dirs_empty_list_is_allowed_without_callback(
+        self, make_query_options
+    ):
+        # An empty list should behave the same as None — no pairing required.
+        opts = make_query_options(artifacts_dirs=[])
+        assert opts.artifacts_dirs == []
+        assert opts.on_artifact_upload_request is None
+
+    def test_artifacts_dirs_accepts_multiple(self, make_query_options):
+        async def _dummy_cb(req):
+            return ArtifactUploadResult(
+                presigned_url="https://example.com", content_type="text/plain"
+            )
+
+        opts = make_query_options(
+            artifacts_dirs=["/tmp/a", "/tmp/b"],
+            on_artifact_upload_request=_dummy_cb,
+        )
+        assert opts.artifacts_dirs == ["/tmp/a", "/tmp/b"]
 
 
 # ---------------------------------------------------------------------------
@@ -997,7 +1043,7 @@ class TestExecuteCommands:
         await client.execute_commands(
             commands=[CommandInterface(command="echo hello")],
             options=make_execute_commands_options(
-                artifacts_dir="/tmp/artifacts",
+                artifacts_dirs=["/tmp/artifacts"],
                 on_artifact_upload_request=on_artifact,
             ),
         )
@@ -1010,6 +1056,34 @@ class TestExecuteCommands:
         assert len(response_msgs) == 1
         assert response_msgs[0]["filename"] == "output.txt"
         assert response_msgs[0]["presigned_url"] == "https://s3.example.com/presigned"
+
+    @pytest.mark.asyncio
+    async def test_artifacts_dirs_forwarded_to_command_execution(
+        self, fake_transport, make_execute_commands_options
+    ):
+        transport, client = fake_transport([COMMAND_RESULT_MSG])
+
+        async def _on_artifact(_req):
+            return ArtifactUploadResult(
+                presigned_url="https://s3.example.com/x", content_type="text/plain"
+            )
+
+        await client.execute_commands(
+            commands=[CommandInterface(command="echo hello")],
+            options=make_execute_commands_options(
+                artifacts_dirs=["/tmp/one", "/tmp/two"],
+                on_artifact_upload_request=_on_artifact,
+            ),
+        )
+
+        cmd_msgs = [
+            m
+            for m in transport.sent
+            if m.get("message_type") == "command_execution_message"
+        ]
+        assert len(cmd_msgs) == 1
+        assert cmd_msgs[0]["artifacts_dirs"] == ["/tmp/one", "/tmp/two"]
+        assert "artifacts_dir" not in cmd_msgs[0]
 
     @pytest.mark.asyncio
     async def test_command_env_forwarded(
@@ -1056,7 +1130,7 @@ class TestExecuteCommands:
 
     def test_execute_commands_options_artifacts_validation(self):
         with pytest.raises(ValueError, match="must be specified together"):
-            ExecuteCommandsOptions(artifacts_dir="/tmp/artifacts")
+            ExecuteCommandsOptions(artifacts_dirs=["/tmp/artifacts"])
 
         async def _dummy_cb(req):
             return ArtifactUploadResult(
@@ -1065,6 +1139,9 @@ class TestExecuteCommands:
 
         with pytest.raises(ValueError, match="must be specified together"):
             ExecuteCommandsOptions(on_artifact_upload_request=_dummy_cb)
+
+        # Empty list should not require the callback.
+        ExecuteCommandsOptions(artifacts_dirs=[])
 
 
 # ---------------------------------------------------------------------------

@@ -122,7 +122,7 @@ class TestOpenAIArtifactsS3:
             options=QueryOptions(
                 system_prompt="You are a helpful assistant. Execute tasks using tools.",
                 model=MODEL,
-                artifacts_dir=artifacts_dir,
+                artifacts_dirs=[artifacts_dir],
                 on_artifact_upload_request=on_artifact,
                 timeout=120,
             ),
@@ -203,7 +203,7 @@ class TestOpenAIFullLifecycle:
                 post_agent_invocation_commands=[
                     CommandInterface(command="echo lifecycle-done")
                 ],
-                artifacts_dir=artifacts_dir,
+                artifacts_dirs=[artifacts_dir],
                 on_artifact_upload_request=on_artifact,
                 on_assistant_message=on_msg,
                 timeout=120,

@@ -129,7 +129,7 @@ const INVOCATION_MSG = {
   system_prompt: "You are a tester",
   user_prompt: "Test the login flow",
   secrets_to_redact: ["secret123"],
-  artifacts_dir: "/tmp/artifacts",
+  artifacts_dirs: ["/tmp/artifacts"],
   output_format_json_schema_str: JSON.stringify({
     type: "json_schema",
     schema: { type: "object" },
@@ -507,18 +507,67 @@ describe("WebSocketSession", () => {
       );
     });
 
-    it("registers each request's artifacts_dir on the shared watcher", async () => {
+    it("registers each request's artifacts_dirs on the shared watcher", async () => {
       const { session, ws } = createSession();
       const done = session.run();
 
-      sendMessage(ws, { ...INVOCATION_MSG, artifacts_dir: "/tmp/first" });
+      sendMessage(ws, { ...INVOCATION_MSG, artifacts_dirs: ["/tmp/first"] });
       await waitForTerminal(ws, 1);
-      sendMessage(ws, { ...INVOCATION_MSG, artifacts_dir: "/tmp/second" });
+      sendMessage(ws, { ...INVOCATION_MSG, artifacts_dirs: ["/tmp/second"] });
       await waitForTerminal(ws, 2);
       await endSession(ws, done);
 
       expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/first");
       expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/second");
+    });
+
+    it("registers every directory when a request lists multiple artifacts_dirs", async () => {
+      const { session, ws } = createSession();
+      const done = session.run();
+
+      sendMessage(ws, {
+        ...INVOCATION_MSG,
+        artifacts_dirs: ["/tmp/a", "/tmp/b", "/tmp/c"],
+      });
+      await waitForTerminal(ws);
+      await endSession(ws, done);
+
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/a");
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/b");
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/c");
+    });
+
+    it("still accepts the deprecated singular artifacts_dir field", async () => {
+      const { session, ws } = createSession();
+      const done = session.run();
+
+      const { artifacts_dirs: _omit, ...withoutPlural } = INVOCATION_MSG;
+      sendMessage(ws, { ...withoutPlural, artifacts_dir: "/tmp/legacy" });
+      await waitForTerminal(ws);
+      await endSession(ws, done);
+
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith(
+        "/tmp/legacy",
+      );
+    });
+
+    it("dedupes when both artifacts_dir and artifacts_dirs name the same path", async () => {
+      const { session, ws } = createSession();
+      const done = session.run();
+
+      sendMessage(ws, {
+        ...INVOCATION_MSG,
+        artifacts_dir: "/tmp/shared",
+        artifacts_dirs: ["/tmp/shared", "/tmp/extra"],
+      });
+      await waitForTerminal(ws);
+      await endSession(ws, done);
+
+      const sharedCalls = mockArtifactManager.addDirectory.mock.calls.filter(
+        (c) => c[0] === "/tmp/shared",
+      );
+      expect(sharedCalls).toHaveLength(1);
+      expect(mockArtifactManager.addDirectory).toHaveBeenCalledWith("/tmp/extra");
     });
   });
 

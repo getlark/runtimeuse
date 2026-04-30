@@ -148,7 +148,7 @@ The runtime downloads and extracts the file before handing control to the agent.
 
 ## Upload Artifacts
 
-When the runtime requests an artifact upload, return a presigned URL and content type from `on_artifact_upload_request`. Set `artifacts_dir` to tell the runtime which sandbox directory contains the files to upload - both options must be provided together.
+When the runtime requests an artifact upload, return a presigned URL and content type from `on_artifact_upload_request`. Set `artifacts_dirs` to a list of sandbox directories the runtime should watch for files to upload - both options must be provided together. Pass multiple paths to watch several directories within a single invocation; each may carry its own `.artifactignore`.
 
 ```python
 from runtimeuse_client import ArtifactUploadResult
@@ -163,11 +163,11 @@ async def on_artifact_upload_request(request) -> ArtifactUploadResult:
 
 
 result = await client.query(
-    prompt="Generate a report and save it as report.txt.",
+    prompt="Generate a report and a screenshot.",
     options=QueryOptions(
         system_prompt="You are a helpful assistant.",
         model="gpt-4.1",
-        artifacts_dir="/runtimeuse/output",
+        artifacts_dirs=["/runtimeuse/output", "/runtimeuse/screenshots"],
         on_artifact_upload_request=on_artifact_upload_request,
     ),
 )

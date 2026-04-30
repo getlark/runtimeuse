@@ -146,9 +146,15 @@ export class WebSocketSession {
     this.config.uploadTracker.setLogger(this.logger);
     this.logger.log("Handling new request");
 
-    if (message.artifacts_dir) {
+    // Watched directories accumulate across requests on a persistent session:
+    // chokidar's awaitWriteFinish + async upload may flush files written near
+    // the end of one request well into the next, and we want to capture those.
+    const artifactDirs = this.collectArtifactDirs(message);
+    if (artifactDirs.length > 0) {
       this.ensureArtifactManager();
-      this.artifactManager!.addDirectory(message.artifacts_dir);
+      for (const dir of artifactDirs) {
+        this.artifactManager!.addDirectory(dir);
+      }
     }
 
     const runner = new InvocationRunner({
@@ -238,6 +244,22 @@ export class WebSocketSession {
       })();
     }
     return this.drainPromise;
+  }
+
+  private collectArtifactDirs(
+    message: InvocationMessage | CommandExecutionMessage,
+  ): string[] {
+    const dirs: string[] = [];
+    if (message.artifacts_dir) {
+      this.logger.warn(
+        "artifacts_dir is deprecated; use artifacts_dirs (string[]) instead.",
+      );
+      dirs.push(message.artifacts_dir);
+    }
+    if (message.artifacts_dirs) {
+      dirs.push(...message.artifacts_dirs);
+    }
+    return [...new Set(dirs)];
   }
 
   private ensureArtifactManager(): void {
