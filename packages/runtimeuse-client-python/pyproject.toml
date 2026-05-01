@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "runtimeuse-client"
-version = "0.15.0"
+version = "0.15.1"
 description = "Client library for AI agent runtime communication over WebSocket"
 readme = "README.md"
 license = {"text" = "FSL"}
