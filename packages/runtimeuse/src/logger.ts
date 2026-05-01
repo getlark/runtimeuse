@@ -7,14 +7,18 @@ export interface Logger {
   debug(...args: unknown[]): void;
 }
 
-export function createLogger(sourceId: string): Logger {
-  const prefix = `[${sourceId}]`;
+export function createPrefixedLogger(inner: Logger, prefix: string): Logger {
+  const tag = `[${prefix}]`;
   return {
-    log: (...args: unknown[]) => console.log(prefix, ...args),
-    warn: (...args: unknown[]) => console.warn(prefix, ...args),
-    error: (...args: unknown[]) => console.error(prefix, ...args),
-    debug: (...args: unknown[]) => console.debug(prefix, ...args),
+    log: (...args: unknown[]) => inner.log(tag, ...args),
+    warn: (...args: unknown[]) => inner.warn(tag, ...args),
+    error: (...args: unknown[]) => inner.error(tag, ...args),
+    debug: (...args: unknown[]) => inner.debug(tag, ...args),
   };
+}
+
+export function createLogger(sourceId: string): Logger {
+  return createPrefixedLogger(defaultLogger, sourceId);
 }
 
 export function createRedactingLogger(

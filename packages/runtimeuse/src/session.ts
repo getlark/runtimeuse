@@ -15,7 +15,7 @@ import type {
 import { getErrorMessage, serializeErrorMetadata } from "./error-utils.js";
 import { redactSecrets, sleep } from "./utils.js";
 import {
-  createLogger,
+  createPrefixedLogger,
   createRedactingLogger,
   defaultLogger,
   type Logger,
@@ -145,7 +145,11 @@ export class WebSocketSession {
 
     const sourceId = message.source_id ?? crypto.randomUUID();
     this.secrets = message.secrets_to_redact ?? [];
-    this.logger = createRedactingLogger(createLogger(sourceId), this.secrets);
+    const baseLogger = this.config.logger ?? defaultLogger;
+    this.logger = createRedactingLogger(
+      createPrefixedLogger(baseLogger, sourceId),
+      this.secrets,
+    );
     this.config.uploadTracker.setLogger(this.logger);
     this.logger.log("Handling new request");
 

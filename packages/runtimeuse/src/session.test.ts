@@ -296,6 +296,52 @@ describe("WebSocketSession", () => {
     });
   });
 
+  describe("logger", () => {
+    it("routes per-request logs through the configured logger", async () => {
+      const logger = {
+        log: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+      };
+
+      const { session, ws } = createSession({ logger });
+      const done = session.run();
+      sendMessage(ws, INVOCATION_MSG);
+      await waitForTerminal(ws);
+      await endSession(ws, done);
+
+      const logged = logger.log.mock.calls.map((c) => c.join(" "));
+      expect(logged.some((l) => l.includes("[test-source-id] Handling new request"))).toBe(true);
+    });
+
+    it("redacts secrets when routing through the configured logger", async () => {
+      const logger = {
+        log: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+      };
+
+      mockHandlerRun.mockImplementation(async (invocation) => {
+        invocation.logger.log("leak: secret123");
+        return { type: "text", text: "ok" } as AgentResult;
+      });
+
+      const { session, ws } = createSession({ logger });
+      const done = session.run();
+      sendMessage(ws, INVOCATION_MSG);
+      await waitForTerminal(ws);
+      await endSession(ws, done);
+
+      const logged = logger.log.mock.calls.map((c) => c.join(" "));
+      expect(logged.some((l) => l.includes("leak: [REDACTED]"))).toBe(true);
+      for (const line of logged) {
+        expect(line).not.toContain("secret123");
+      }
+    });
+  });
+
   describe("heartbeats", () => {
     it("sends heartbeat messages while a request is in flight", async () => {
       let resolveAgent!: () => void;
