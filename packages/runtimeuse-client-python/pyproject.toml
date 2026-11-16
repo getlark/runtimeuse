@@ -23,7 +23,7 @@ Issues = "https://github.com/getlark/runtimeuse/issues"
 [project.optional-dependencies]
 dev = [
     "boto3",
-    "daytona",
+    "daytona<1",
     "e2b",
     "e2b-code-interpreter",
     "modal",
